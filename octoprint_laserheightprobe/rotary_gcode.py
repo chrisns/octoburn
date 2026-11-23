@@ -62,6 +62,7 @@ GUARD = "M112 ; RAW LIGHTBURN ROTARY FILE"
 # to go to -X on the top surface for a right-handed (unmirrored) result: B = -A.
 Y_SIGN = 1
 B_SIGN = -1
+MIN_BURN_SEG = 0.1               # mm of surface: burn moves shorter than this are skipped (merged)
 MAX_B_FEED = 2400.0              # deg/min (Luban's MAX_B_SPEED; the firmware's cap is 45 deg/s)
 TRAVEL_FEED = 3000.0
 # Where the head goes before it crosses when nobody knows where it is (a file run): above the
@@ -327,6 +328,8 @@ class RotaryEmitter(object):
         self.prev = None                          # machine dict(y, b, z) of the last move sent
         self.armed = False                        # "M3 S0" sent since the last M5
         self.burned, self.fastest_b = 0.0, 0.0
+        self.min_burn_seg = MIN_BURN_SEG
+        self.skipped = 0                    # microscopic burn moves skipped
         self.slowed = 0                     # burn moves slowed (power scaled with them) to the B limit
         # Split moves longer than this (mm of surface) so a stop waits behind short blocks and
         # Z follows the runout between the ends (None: no splitting, as for a file).
@@ -415,6 +418,12 @@ class RotaryEmitter(object):
         else:
             minutes = mv["minutes"]
             f = self.travel_feed if not minutes else fw / minutes
+            surf_len = math.hypot(dlin, db / self.deg_per_mm) if self.deg_per_mm else dlin
+            if mv["fire"] and surf_len < self.min_burn_seg:
+                # a microscopic burn move (the inner specks of an offset fill): skip it and draw the next
+                # move from the last point sent. Tiny reversing loops hung the firmware (2026-11-23).
+                self.skipped += 1
+                return out
             if mv["fire"]:
                 if not minutes:
                     raise TranslateError("a burn with no speed")

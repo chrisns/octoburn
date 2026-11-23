@@ -556,6 +556,15 @@ class Bridge(object):
         self.emitter.start_z = self.machine_z
         return self.emitter.preamble()
 
+    def fault(self, message):
+        """Stop and hold an alarm from outside the stream (the link guard): LightBurn's next line
+        gets an error and its job ends; a reset (LightBurn's Stop, or disarming in OctoPrint) clears it."""
+        with self.cond:
+            self._pointer_off_locked()
+            self._alarm(message)
+            self.cond.notify_all()
+        self._resync()
+
     def _alarm(self, message):
         """A refusal in the middle of a stream: whatever follows would be drawn from a position
         LightBurn did not mean, so stop, laser off, and refuse everything until a reset."""
