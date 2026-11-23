@@ -784,10 +784,12 @@ What the translator (`rotary_gcode.translate`) does, from real LightBurn 2.1.04 
   1200 mm/min once translated.
 - No arcs: LightBurn writes circles as G1 segments in rotary mode; G2/G3 are refused anyway.
 - It runs in G53 with inline S after one M3 S0, and refuses anything it does not understand, a
-  missing or negative focus offset, a burn outside the measured body, and a burn that would turn
-  B faster than 2400 deg/min. The 10W's offset is about +5.75 with this head. The firmware caps B at
-  45 deg/s and slows a faster move with the power unchanged, which over-burns. On 78 mm that is
-  about 1630 mm/min of surface, and the refusal names the speed that fits.
+  missing or negative focus offset, and a burn outside the measured body. The 10W's offset is
+  about +5.75 with this head. The firmware caps B at 45 deg/s (2400 deg/min) and slows a faster
+  move with the power unchanged, which over-burns. OctoBurn slows such a move to the limit itself
+  and scales its power by the same factor, so the energy per mm stays what LightBurn asked for.
+  On 78 mm the limit is about 1630 mm/min of surface. LightBurn's feed on near-pure rotations,
+  such as offset-fill contours, often runs over it.
 
 ## Close-up camera (10W head camera, for LightBurn)
 
