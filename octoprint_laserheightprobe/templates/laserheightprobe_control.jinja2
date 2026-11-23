@@ -1,0 +1,165 @@
+<div id="laserheightprobe_control" class="laserheightprobe-panel lhp-panel" style="display: none;">
+  <h4><img class="lhp-logo-sm" src="plugin/laserheightprobe/static/img/octoburn-40.png" alt=""> OctoBurn probe
+    <a href="#" class="lhp-tablink" data-bind="click: uiOpenTab">Open OctoBurn <i class="fas fa-arrow-right"></i></a></h4>
+  <p class="laserheightprobe-status">
+    <span data-bind="css: {'text-success': probeStatus().reachable, 'text-error': probeStatus().reachable === false}, text: probeStatus().reachable === false ? 'ESP not reachable' : (probeStatus().reachable ? 'ESP ok' : 'ESP ?')"></span>
+    &middot; latched <strong data-bind="text: yesNo(probeStatus().latched)"></strong>
+    &middot; pin <strong data-bind="text: probeStatus().deployed ? 'down' : 'up'" title="As last commanded: the ESP cannot report the pin"></strong>
+  </p>
+  <p class="laserheightprobe-compact">
+    <span data-bind="text: detectedText, css: {'text-warning': detectedWarning}"></span>
+    <button class="btn btn-mini" data-bind="click: detect, enable: canProbe() && !running() && printerReady()" title="Ask the printer what is fitted (M1006, M114, M2002 S1)">Detect</button>
+  </p>
+
+  <!-- ko ifnot: isLaser -->
+  <div class="alert alert-info laserheightprobe-compact">
+    No laser is fitted, so the laser tools are hidden. Heating and 3D prints are allowed.
+  </div>
+  <!-- /ko -->
+  <!-- ko if: isLaser -->
+
+  <!-- ko ifnot: sessionOk -->
+  <div class="alert laserheightprobe-compact">
+    Tap test needed before Probe here<span data-bind="text: sessionReason() ? ' (' + sessionReason() + ')' : ''"></span>.
+  </div>
+  <!-- /ko -->
+  <!-- ko if: waitingForTap -->
+  <div class="alert alert-info laserheightprobe-compact"><strong>Tap the probe pin with a finger now.</strong> 60 s.</div>
+  <!-- /ko -->
+
+  <!-- ko if: pickModule -->
+  <div class="laserheightprobe-row">
+    <select class="input-medium" data-bind="options: modules, optionsText: moduleLabel, optionsValue: 'name', value: selectedModule, enable: canProbe() && !running()" title="M1006 cannot name this laser: pick it"></select>
+  </div>
+  <!-- /ko -->
+  <div class="laserheightprobe-row form-inline">
+    <label class="radio inline"><input type="radio" value="point" data-bind="checked: hereArea, enable: !running()"> Point</label>
+    <label class="radio inline"><input type="radio" value="square" data-bind="checked: hereArea, enable: !running()"> Square</label>
+    <label class="radio inline"><input type="radio" value="diamond" data-bind="checked: hereArea, enable: !running()"> Diamond</label>
+    <label class="radio inline"><input type="radio" value="x" data-bind="checked: hereArea, enable: !running()"> X line</label>
+    <label class="radio inline"><input type="radio" value="y" data-bind="checked: hereArea, enable: !running()"> Y line</label>
+    <label class="radio inline" title="Repeatability: N fine touches over one spot, all kept"><input type="radio" value="repeat" data-bind="checked: hereArea, enable: !running()"> Repeat</label>
+    <!-- ko if: hereArea() === 'repeat' -->
+    <input type="number" step="1" min="3" max="10" class="input-mini" data-bind="value: hereRepeatN, enable: !running()" title="Touches, 3 to 10"> touches
+    <!-- /ko -->
+    <!-- ko if: patternArea -->
+    <input type="number" step="0.5" min="0.5" max="50" class="input-mini" data-bind="value: hereSquareSize, enable: !running()" title="Size across, mm (0.5 to 50)"> mm,
+    <input type="number" step="1" min="2" max="9" class="input-mini" data-bind="value: hereSquareN, enable: !running()" title="Points per side (per line)"> <span data-bind="text: (hereArea() === 'x' || hereArea() === 'y') ? 'points' : 'per side'"></span>
+    <!-- /ko -->
+  </div>
+  <div class="laserheightprobe-row form-inline" data-bind="visible: hereArea() !== 'repeat'">
+    From <input type="number" step="0.1" min="0" max="300" class="input-mini" data-bind="value: hereHeight, enable: !running()" title="The object's height above the bed, mm (calipers). Empty: probe from where the head is"> mm above the bed
+    <span class="muted" data-bind="text: flatBedZ() === null ? '(no bed yet)' : '(bed Z' + Number(flatBedZ()).toFixed(3) + ')'"></span>
+    <button class="btn btn-mini" data-bind="click: useHereAsBed, enable: hereLast() && !running()" title="The last Probe here result was on the bare bed: heights are measured from it">Use last result as bed</button>
+  </div>
+  <p class="muted laserheightprobe-compact" data-bind="visible: hereArea() !== 'repeat' && String(hereHeight() || '').trim() !== ''">
+    With a height: the head drops, pin up, to 6 mm above where that puts the top, probes at most
+    9 mm down, then goes back up to where you left it. A touch near the start means the object is
+    taller than the height given, and stops.
+  </p>
+  <div class="laserheightprobe-row">
+    <button class="btn btn-primary btn-large" data-bind="click: probeHere, enable: canProbeHere, text: probeButtonText">Probe here</button>
+    <button class="btn btn-danger" data-bind="click: abort, enable: running">Abort</button>
+    <button class="btn" data-bind="click: tapTest, enable: canProbe() && !running() && printerReady(), css: {'btn-warning': !sessionOk()}">Tap test</button>
+  </div>
+  <p class="muted laserheightprobe-compact" data-bind="visible: hereArea() === 'point'">
+    Jog the pin over the spot, a few mm above it, then Probe here. The head goes down at most
+    <span data-bind="text: hereMaxDescent"></span> mm, then back up to where it started. No XY move.
+  </p>
+  <p class="muted laserheightprobe-compact" data-bind="visible: patternArea">
+    Jog the pin over the centre, a few mm above the <strong>highest</strong> part of the area.
+    <strong>The head moves in X and Y</strong>, pin up, at that height, and probes
+    <span data-bind="text: patternCount"></span> points (<span data-bind="text: {square: 'a square', diamond: 'a square turned 45 degrees, corners out along X and Y', x: 'a line along X only', y: 'a line along Y only'}[hereArea()]"></span>).
+    It reports the highest, then goes back to where it started.
+  </p>
+  <p class="muted laserheightprobe-compact" data-bind="visible: hereArea() === 'repeat'">
+    Like Probe here, but takes <span data-bind="text: hereRepeatN"></span> fine touches over the
+    same spot and keeps every one, for the probe's repeatability. For the swap figure, do one
+    repeat run, swap the head out and back in, and repeat; the tab's calibration section
+    compares them with the reference.
+  </p>
+  <p class="muted laserheightprobe-compact" data-bind="visible: repeatText, text: repeatText"></p>
+  <p class="text-error" data-bind="text: panelError, visible: panelError"></p>
+  <p class="muted" data-bind="text: message, visible: running"></p>
+
+  <!-- ko if: hereLast -->
+  <table class="table table-condensed laserheightprobe-last"><tbody>
+    <!-- ko if: hereLast().square -->
+    <tr><th>Square</th><td>highest of <span data-bind="text: hereLast().square.hits + '/' + hereLast().square.total"></span>
+      in <span data-bind="text: hereLast().square.size"></span> mm, range
+      <span data-bind="text: hereLast().square.range.toFixed(3)"></span> mm</td></tr>
+    <!-- /ko -->
+    <tr><th>Trigger Z</th><td data-bind="text: num(hereLast().z, false)"></td></tr>
+    <tr><th>Focus Z</th><td data-bind="text: num(hereLast().focus, false)"></td></tr>
+    <tr><th>LightBurn offset</th><td><strong data-bind="text: num(hereLast().lightburn, true)"></strong></td></tr>
+  </tbody></table>
+  <!-- /ko -->
+
+  <!-- ko if: hereRows().length -->
+  <div class="lhp-history">
+  <table class="table table-condensed laserheightprobe-here">
+    <thead><tr><th>#</th><th>X</th><th>Y</th><th>Z</th><th>Focus</th><th>Offset</th><th></th></tr></thead>
+    <tbody data-bind="foreach: hereRows">
+      <tr data-bind="css: {info: is_datum}">
+        <td data-bind="text: index + 1"></td>
+        <td data-bind="text: x.toFixed(1)"></td>
+        <td data-bind="text: y.toFixed(1)"></td>
+        <td data-bind="text: z.toFixed(3)"></td>
+        <td data-bind="text: $parent.num(focus, false)"></td>
+        <td data-bind="text: $parent.num(lightburn, true)"></td>
+        <td>
+          <!-- ko if: is_datum --><span class="muted">datum</span><!-- /ko -->
+          <!-- ko ifnot: is_datum -->
+          <button class="btn btn-mini" data-bind="click: function () { $parent.setHereDatum(index); }, enable: $parent.canProbe">Set as datum</button>
+          <!-- /ko -->
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="laserheightprobe-row">
+    <button class="btn btn-small" data-bind="click: copyHereText">Copy as text</button>
+    <button class="btn btn-small" data-bind="click: clearHere, enable: canProbe() && !running()">Clear</button>
+    <span class="muted" data-bind="text: hereCopyMessage"></span>
+  </div>
+  <textarea readonly rows="4" id="laserheightprobe_here_text" class="input-block-level laserheightprobe-text" data-bind="value: hereText"></textarea>
+  <p class="muted laserheightprobe-compact">
+    Offset = focus here minus focus at the datum; positive means this spot's focus is higher.
+    Check the sign once in LightBurn with a +1 mm test layer, beam off.
+  </p>
+  <!-- /ko -->
+
+  <details class="lhp-panel-details">
+  <summary>Pointer and beam offset</summary>
+  <div class="laserheightprobe-row">
+    <button class="btn btn-small" data-bind="click: togglePointer, enable: canProbe() && !running() && printerReady(), css: {'btn-warning': handPointer}, text: handPointer() ? 'Pointer off' : 'Pointer on'" title="The 10W's own beam at low power, or the 2W IR's crosshair. Only with the laser on the head; off by itself after a few minutes."></button>
+    <button class="btn btn-small" data-bind="click: markPin, enable: canProbe() && !running() && printerReady()" title="Probe on the head, its pin on the dot">Pin on dot</button>
+    <button class="btn btn-small" data-bind="click: markBeam, enable: canProbe() && !running() && printerReady() && offsetPin()" title="Laser on the head, its pointer on the same dot">Light on dot</button>
+  </div>
+  <p class="muted laserheightprobe-compact">
+    Beam offset: with the probe on, Probe here on a card, deploy the pin, jog down until it is just
+    above a marked dot and over it, press <em>Pin on dot</em>. Swap the laser in, power cycle, home
+    X Y Z, go to the focus height, <em>Pointer on</em>, jog until the light is on the dot, press
+    <em>Light on dot</em>.
+  </p>
+  <!-- ko if: offsetPin -->
+  <p class="laserheightprobe-compact">Pin on the dot at X<span data-bind="text: offsetPin().x.toFixed(3)"></span> Y<span data-bind="text: offsetPin().y.toFixed(3)"></span>.</p>
+  <!-- /ko -->
+  <!-- ko if: offsetResult -->
+  <p class="laserheightprobe-compact">
+    <strong data-bind="text: offsetResult().module"></strong> beam offset: dx
+    <strong data-bind="text: offsetResult().dx.toFixed(3)"></strong>, dy
+    <strong data-bind="text: offsetResult().dy.toFixed(3)"></strong> mm
+    <button class="btn btn-mini btn-primary" data-bind="click: saveBeamOffset, enable: canProbe">Save</button>
+  </p>
+  <!-- /ko -->
+  </details>
+  <p class="text-error" data-bind="text: laserMessage, visible: laserMessage"></p>
+
+  <div class="btn-group laserheightprobe-row">
+    <button class="btn btn-small" data-bind="click: function () { probeButton('deploy'); }, enable: canProbe() && !running()">Deploy</button>
+    <button class="btn btn-small" data-bind="click: function () { probeButton('stow'); }, enable: canProbe() && !running()">Stow</button>
+    <button class="btn btn-small" data-bind="click: function () { probeButton('reset'); }, enable: canProbe() && !running()">Reset</button>
+  </div>
+  <!-- /ko -->
+</div>

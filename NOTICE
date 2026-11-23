@@ -1,0 +1,21 @@
+OctoBurn
+https://github.com/chrisns/octoburn
+
+The source code, documentation and probe hardware files in this repository are released under
+the MIT licence (see LICENSE). The following are NOT covered by that licence:
+
+1. The OctoBurn logo (octoprint_laserheightprobe/static/img/octoburn-*.png and copies of it in
+   site/ and the films). It is adapted from the OctoPrint logo. OctoPrint is a registered
+   trademark of Gina Häußge; see https://octoprint.org/trademark/. OctoBurn is not affiliated
+   with or endorsed by OctoPrint.
+
+2. The films in site/media/ ("OctoBurn - trailer" and "OctoBurn - how it works"). They contain
+   footage generated from Snapmaker's product photography, which remains the property of
+   Snapmaker, and the logo above. They are shared for non-commercial viewing only.
+
+Snapmaker, Snapmaker 2.0, A350 and Luban are trademarks of Snapmaker. OctoBurn is an
+independent, unofficial project and is not affiliated with or endorsed by Snapmaker.
+LightBurn is a trademark of LightBurn Software, LLC.
+
+The probe's Quick Swap plate profile was measured from Snapmaker's published 10W laser module
+STEP file and from a real plate; no Snapmaker CAD is redistributed here.

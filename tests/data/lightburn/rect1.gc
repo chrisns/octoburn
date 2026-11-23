@@ -1,0 +1,32 @@
+; LightBurn Core 2.1.04
+; GRBL-M3 (1.1e or earlier) device profile, absolute coords
+; Bounds: X20 Y20 to X80 Y40
+
+;USER START SCRIPT
+M112 ; RAW LIGHTBURN ROTARY FILE: translate it first (the translator removes this line)
+
+;USER START SCRIPT
+
+G00 G17 G40 G21 G54
+G90
+; Cut @ 1200 mm/min, 20% power
+M8
+M5
+G0 X20A29.382
+; Layer C00
+M3
+G1 A58.765S51F1762.95
+G1 X80F1200
+G1 A29.382F1762.95
+G1 X20F1200
+G1 S0
+M5
+M9
+G1 S0
+G90
+
+;USER END SCRIPT
+M5
+
+;USER END SCRIPT
+M2
