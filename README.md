@@ -750,6 +750,26 @@ F800" (A for the rotate buttons, Y still sent in rotary: mm round); Frame starts
 nearest the head; the end of a job sends "G0 X0Y0" then "M2"; streams carry no ";" comments; Pause
 is "!", Resume "~", Stop 0x18 then M5; an error halts the job.
 
+#### Link guard: a lost `ok`
+
+On 23 Nov 2026 the Snapmaker stopped answering a burn line three times during dense rotary
+burns. It stayed alive: its temperature reports kept arriving every 2 s, so OctoPrint never timed
+out. OctoPrint waited for the `ok` for ever and sent nothing more. The firmware finished its
+queued moves and left the laser on at the last line's power, on one spot, for 28 minutes the
+first time.
+
+The link guard watches every line sent and received:
+
+1. A burn line (a G1 with S above 0) that has waited `link_ok_s` for its `ok` while the printer
+   still reports has lost its `ok`. The guard fakes it and the job carries on.
+2. A second loss before any real `ok`, or a printer that has gone silent, stops the burn: the
+   queue is dropped, then M410 (quick stop) and M5. The LightBurn bridge raises an alarm, so
+   LightBurn's job ends. LightBurn's Stop or Disarm clears it.
+3. If no real `ok` follows within `link_power_s`, the guard turns off `emergency_power_switch`,
+   when one is set.
+
+The tests replay the three real stalls from the serial log (`tests/data/serial/`).
+
 ### LightBurn rotary jobs
 
 The reference setup has a LightBurn device **"Snapmaker 10W Rotary (translate first)"**: GRBL-M3, rotary
@@ -785,11 +805,16 @@ What the translator (`rotary_gcode.translate`) does, from real LightBurn 2.1.04 
 - No arcs: LightBurn writes circles as G1 segments in rotary mode; G2/G3 are refused anyway.
 - It runs in G53 with inline S after one M3 S0, and refuses anything it does not understand, a
   missing or negative focus offset, and a burn outside the measured body. The 10W's offset is
-  about +5.75 with this head. The firmware caps B at 45 deg/s (2400 deg/min) and slows a faster
-  move with the power unchanged, which over-burns. OctoBurn slows such a move to the limit itself
-  and scales its power by the same factor, so the energy per mm stays what LightBurn asked for.
-  On 78 mm the limit is about 1630 mm/min of surface. LightBurn's feed on near-pure rotations,
-  such as offset-fill contours, often runs over it.
+  about +5.75 with this head.
+- B has a ceiling, `rotary_max_b_feed`, 1500 deg/min by default. The firmware allows 2700 and
+  slows a faster move with the power unchanged, which over-burns. Worse, on 23 Nov 2026 it
+  stopped answering five times, every time on B-dominant moves at 2000-2400 deg/min and never
+  slower. OctoBurn slows a burn move that would turn B faster than the ceiling and scales its
+  power by the same factor, so the energy per mm stays what LightBurn asked for. Turn-heavy
+  travels are slowed to the ceiling too. On 78 mm, 1500 deg/min is about 1020 mm/min of surface.
+  LightBurn's feed on near-pure rotations, such as offset-fill contours, often runs over it.
+- Burn moves shorter than 0.1 mm of surface are merged into the next one. LightBurn writes tiny
+  reversing loops on some fills, and a run of them hung the firmware.
 
 ## Close-up camera (10W head camera, for LightBurn)
 
@@ -1005,6 +1030,10 @@ The buttons are refused while a job runs.
 | Tap test | on | A finger tap before every automatic job and calibration. Off only behind a warning. Probe here always needs one per session |
 | Laser modules | `10W = , 0, 0` and `2W IR =` | `name = focus offset, dx, dy`, blank until measured |
 | Flip LightBurn sign | off | See above |
+| `rotary_max_b_feed` | 1500 deg/min | Rotary B ceiling for burns and travels (300-2400). See [LightBurn rotary jobs](#lightburn-rotary-jobs) |
+| `link_ok_s` | 2.0 s | Link guard: how long a burn line waits for its `ok` before the guard acts |
+| `link_power_s` | 3.0 s | Link guard: after a stop, how long to wait for a real `ok` before cutting the power |
+| `emergency_power_switch` | empty | Link guard: a Home Assistant switch on the printer's mains, like `switch.laser_printer`. Uses the purifier's Home Assistant URL and token. Empty: no power cut |
 
 The last results are saved as `last_results.json` in the plugin's data folder.
 
