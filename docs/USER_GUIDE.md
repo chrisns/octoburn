@@ -107,7 +107,8 @@ stops a burn and what to do about it. When every line is green, you can burn.
 
    Arming lasts 30 minutes at most. Opening the door disarms it at once.
 6. **Press Start in LightBurn.** Watch it in LightBurn or OctoPrint. Disarm when you are done,
-   or let it time out.
+   or let it time out. Disarming mid-job stops the beam at once: OctoBurn drops the queued burn
+   lines, sends a quick stop (M410) and turns the laser off (M5).
 7. **Look at Recent burns.** After a flat burn with the door shut, OctoBurn takes a close-up
    photo of the burnt area and lists it with the time, duration, energy and power. Click a
    thumbnail for the full photo.
