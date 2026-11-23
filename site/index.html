@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/talks.css">
 <link rel="stylesheet" href="css/site.css">
+<script src="js/motion.js" defer></script>
 </head>
 <body>
 <div class="page">
@@ -48,7 +49,7 @@
 <main>
 
 <section class="talks-hero ob-hero">
-  <figure class="plate">
+  <figure class="plate" data-speed="0.08">
     <div class="plate-frame">
       <span class="plate-stamp">Trailer · 30 s</span>
       <video class="ob-video" controls playsinline preload="metadata" poster="media/trailer-poster.jpg">
@@ -59,7 +60,7 @@
   </figure>
   <div class="talks-hero-body">
     <span class="eyebrow">§01 · OctoPrint plugin · MIT</span>
-    <h1 class="talks-hero-headline">The Snapmaker 2.1 <em>we deserved</em></h1>
+    <h1 class="talks-hero-headline" data-speed="-0.06">The Snapmaker 2.1 <em>we deserved</em></h1>
     <p class="talks-hero-lede">The A350 can 3D print, carve and burn. What it could never do was <em>see</em>: where the surface is, how round the round thing is, whether the door is shut. OctoBurn turns OctoPrint into the control room for both its lasers, the 10W and the 2W infrared. You draw in LightBurn, press Start and <em>stay with it</em>; OctoBurn handles everything LightBurn can't see.</p>
     <div class="talks-hero-ctas">
       <a class="btn btn-primary" href="#install">Install it</a>
@@ -74,16 +75,46 @@
   </div>
 </section>
 
+<section class="ob-story" aria-label="What OctoBurn does, in six frames">
+  <div class="ob-story-stage">
+    <div class="ob-story-panel" data-i="0">
+      <div class="ob-story-bg" style="background-image:url(img/story/s1-lineup.jpg)"></div>
+      <div class="ob-story-text"><span class="eyebrow">No.01</span><p class="ob-story-line">We were promised a machine that could do <em>everything</em>.</p><p class="ob-story-sub">3D print. Carve. Burn. One frame, swappable heads.</p></div>
+    </div>
+    <div class="ob-story-panel" data-i="1">
+      <div class="ob-story-bg" style="background-image:url(img/story/s2-dark.jpg)"></div>
+      <div class="ob-story-text"><span class="eyebrow">No.02</span><p class="ob-story-line">It could. It just couldn't <em>see</em>.</p><p class="ob-story-sub">Where the surface is. How round the round thing is. Whether the door is shut.</p></div>
+    </div>
+    <div class="ob-story-panel" data-i="2">
+      <div class="ob-story-bg" style="background-image:url(img/story/s3-reddot.jpg)"></div>
+      <div class="ob-story-text"><span class="eyebrow">No.03</span><p class="ob-story-line">It finds <em>the focus</em>.</p><p class="ob-story-sub">From the red dot, a probe touch or a height map. Never a number typed by hand.</p></div>
+    </div>
+    <div class="ob-story-panel" data-i="3">
+      <div class="ob-story-bg" style="background-image:url(img/story/s4-probe.jpg)"></div>
+      <div class="ob-story-text"><span class="eyebrow">No.04</span><p class="ob-story-line">It measures <em>the round things</em>.</p><p class="ob-story-sub">Axis, diameter, ends and wobble, so a flask that isn't perfect still burns crisp.</p></div>
+    </div>
+    <div class="ob-story-panel" data-i="4">
+      <div class="ob-story-bg" style="background-image:url(img/story/s7-lit.jpg)"></div>
+      <div class="ob-story-text"><span class="eyebrow">No.05</span><p class="ob-story-line">It sees to <em>0.12 mm</em>.</p><p class="ob-story-sub">The 10W's own camera, stitched into LightBurn: the beam lands where you drew.</p></div>
+    </div>
+    <div class="ob-story-panel" data-i="5">
+      <div class="ob-story-bg" style="background-image:url(img/story/s6-enclosure.jpg)"></div>
+      <div class="ob-story-text"><span class="eyebrow">No.06</span><p class="ob-story-line">And it waits <em>for you</em>.</p><p class="ob-story-sub">Door shut, laser seated, armed by hand. Safe, attended burns.</p></div>
+    </div>
+    <div class="ob-story-progress" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  </div>
+</section>
+
 <section class="section-header" id="film">
   <div class="rule strong"></div>
-  <div class="sh-row">
+  <div class="sh-row" data-reveal>
     <span class="eyebrow">§02 · The film</span>
     <span></span>
     <h2 class="sh-title">How it <em>works</em>, in under three minutes</h2>
   </div>
   <div class="rule"></div>
 </section>
-<figure class="plate ob-wide">
+<figure class="plate ob-wide" data-zoom>
   <div class="plate-frame">
     <video class="ob-video" controls playsinline preload="none" poster="media/explainer-poster.jpg">
       <source src="media/octoburn-how-it-works.mp4" type="video/mp4">
@@ -94,7 +125,7 @@
 
 <section class="section-header" id="attended">
   <div class="rule strong"></div>
-  <div class="sh-row">
+  <div class="sh-row" data-reveal>
     <span class="eyebrow">§03 · The point</span>
     <span></span>
     <h2 class="sh-title">Attended, <em>on purpose</em></h2>
@@ -113,7 +144,7 @@
 
 <section class="section-header" id="features">
   <div class="rule strong"></div>
-  <div class="sh-row">
+  <div class="sh-row" data-reveal>
     <span class="eyebrow">§04 · What it does</span>
     <span></span>
     <h2 class="sh-title">Measure. See. <em>Burn.</em></h2>
@@ -121,38 +152,38 @@
   <div class="rule"></div>
 </section>
 <div class="talk-grid">
-  <article class="talk-card">
-    <a class="talk-thumb-link" href="guide.html#3-a-flat-burn-start-to-finish"><div class="talk-thumb"><img class="thumb-img ob-top" src="img/guide/ui_burn_flat.png" alt="The Burn pane in flat mode, every check green"></div></a>
+  <article class="talk-card" data-reveal>
+    <a class="talk-thumb-link" href="guide.html#3-a-flat-burn-start-to-finish"><div class="talk-thumb"><img data-inner class="thumb-img ob-top" src="img/guide/ui_burn_flat.png" alt="The Burn pane in flat mode, every check green"></div></a>
     <h3 class="talk-title">It finds <em>the focus</em></h3>
     <p class="talk-desc">On the bed, on material of a given thickness, from a probe touch, or from the 10W's red dot where you last framed. The 2W infrared gets its focus from a probe touch and a focus ladder. Flat or rotary mode is picked from what is plugged in.</p>
     <div class="talk-formats"><span class="format-tag">Focus</span><span class="format-tag">Auto mode</span></div>
   </article>
-  <article class="talk-card">
-    <a class="talk-thumb-link" href="guide.html#5-uneven-surfaces-height-maps-and-the-red-dot"><div class="talk-thumb"><img class="thumb-img" src="img/guide/photo_reddot_wood.jpg" alt="The red dot on a piece of wood, seen by the head camera"></div></a>
+  <article class="talk-card" data-reveal>
+    <a class="talk-thumb-link" href="guide.html#5-uneven-surfaces-height-maps-and-the-red-dot"><div class="talk-thumb"><img data-inner class="thumb-img" src="img/guide/photo_reddot_wood.jpg" alt="The red dot on a piece of wood, seen by the head camera"></div></a>
     <h3 class="talk-title">It follows <em>the surface</em></h3>
     <p class="talk-desc">Map a warped board or a curved lid with the probe or the red dot. The map goes into the printer, so every move LightBurn sends follows the surface, and mapped objects become obstacles the module keeps clear of.</p>
     <div class="talk-formats"><span class="format-tag">Height maps</span><span class="format-tag">Red dot</span></div>
   </article>
-  <article class="talk-card">
-    <a class="talk-thumb-link" href="guide.html#6-the-rotary"><div class="talk-thumb"><img class="thumb-img" src="img/guide/photo_rotary_cross.jpg" alt="A test cross burnt on a tube in the rotary"></div></a>
+  <article class="talk-card" data-reveal>
+    <a class="talk-thumb-link" href="guide.html#6-the-rotary"><div class="talk-thumb"><img data-inner class="thumb-img" src="img/guide/photo_rotary_cross.jpg" alt="A test cross burnt on a tube in the rotary"></div></a>
     <h3 class="talk-title">It measures <em>the round things</em></h3>
     <p class="talk-desc">Plug in the rotary and the probe finds the axis, the diameter and the ends, then checks itself. Nothing is perfectly round or perfectly clamped: it measures how the surface wobbles as it turns (up to 3 mm a turn) and follows it, so slight imperfections are far less noticeable.</p>
     <div class="talk-formats"><span class="format-tag">Rotary</span><span class="format-tag">Probe</span></div>
   </article>
-  <article class="talk-card">
-    <a class="talk-thumb-link" href="guide.html#4-seeing-the-work-overview-and-close-up"><div class="talk-thumb"><img class="thumb-img" src="img/guide/photo_closeup.jpg" alt="A stitched close-up of burnt test crosses"></div></a>
+  <article class="talk-card" data-reveal>
+    <a class="talk-thumb-link" href="guide.html#4-seeing-the-work-overview-and-close-up"><div class="talk-thumb"><img data-inner class="thumb-img" src="img/guide/photo_closeup.jpg" alt="A stitched close-up of burnt test crosses"></div></a>
     <h3 class="talk-title">It gives LightBurn <em>eyes</em></h3>
     <p class="talk-desc">The 10W module's own camera takes overlapping photos from 50 mm up. OctoBurn corrects the lens and stitches them in LightBurn's coordinates, so what you draw on the overlay is where the beam lands.</p>
     <div class="talk-formats"><span class="format-tag">Camera</span><span class="format-tag">LightBurn</span></div>
   </article>
-  <article class="talk-card">
-    <a class="talk-thumb-link" href="guide.html#8-what-keeps-you-safe"><div class="talk-thumb"><img class="thumb-img ob-top" src="img/guide/ui_door_open.png" alt="The checklist saying the enclosure door is open"></div></a>
+  <article class="talk-card" data-reveal>
+    <a class="talk-thumb-link" href="guide.html#8-what-keeps-you-safe"><div class="talk-thumb"><img data-inner class="thumb-img ob-top" src="img/guide/ui_door_open.png" alt="The checklist saying the enclosure door is open"></div></a>
     <h3 class="talk-title">It will not fire <em>until it's safe</em></h3>
     <p class="talk-desc">The module must be seated, the door shut and the laser armed with two deliberate clicks. Open the door and it disarms. The air purifier starts by itself and runs until the air is clear. All of this guards an attended burn.</p>
     <div class="talk-formats"><span class="format-tag">Interlocks</span><span class="format-tag">Air</span></div>
   </article>
-  <article class="talk-card">
-    <a class="talk-thumb-link" href="guide.html#9-lightburn-setup-and-keeping-it-in-sync"><div class="talk-thumb"><img class="thumb-img ob-top" src="img/guide/ui_burn_rotary.png" alt="The Burn pane in rotary mode"></div></a>
+  <article class="talk-card" data-reveal>
+    <a class="talk-thumb-link" href="guide.html#9-lightburn-setup-and-keeping-it-in-sync"><div class="talk-thumb"><img data-inner class="thumb-img ob-top" src="img/guide/ui_burn_rotary.png" alt="The Burn pane in rotary mode"></div></a>
     <h3 class="talk-title">LightBurn, <em>live</em></h3>
     <p class="talk-desc">OctoPrint answers as a GRBL laser over TCP, so jog, Frame, Start, Pause and Stop work from LightBurn while OctoPrint keeps the printer. Each laser gets its own LightBurn devices; framing uses the 10W's low beam or the 2W infrared's crosshair. A small tool keeps it all in step with what OctoBurn measured.</p>
     <div class="talk-formats"><span class="format-tag">GRBL bridge</span><span class="format-tag">Sync</span></div>
@@ -161,7 +192,7 @@
 
 <section class="section-header" id="burn">
   <div class="rule strong"></div>
-  <div class="sh-row">
+  <div class="sh-row" data-reveal>
     <span class="eyebrow">§05 · A burn, start to finish</span>
     <span></span>
     <h2 class="sh-title">Six steps, <em>no arithmetic</em></h2>
@@ -169,17 +200,17 @@
   <div class="rule"></div>
 </section>
 <ol class="ob-steps">
-  <li><span class="numeral">01</span><div><h3 class="h4">Put the work on the bed</h3><p>And look at what else is there: the 10W module reaches 74 mm to the left of the beam.</p></div></li>
-  <li><span class="numeral">02</span><div><h3 class="h4">Check the mode</h3><p>You don't pick it. No rotary means flat; rotary plugged in means rotary, once the object is measured.</p></div></li>
-  <li><span class="numeral">03</span><div><h3 class="h4">Set the focus</h3><p>Bed plus thickness, a probe touch, or the red dot. The line underneath says the Z and where it came from.</p></div></li>
-  <li><span class="numeral">04</span><div><h3 class="h4">Frame in LightBurn</h3><p>OctoBurn checks the outline against anything tall it knows about before a single move.</p></div></li>
-  <li><span class="numeral">05</span><div><h3 class="h4">Arm, Start, and stay with it</h3><p>Two clicks to arm, for 30 minutes at most. Press Start in LightBurn and watch it burn.</p></div></li>
-  <li><span class="numeral">06</span><div><h3 class="h4">Look at what you made</h3><p>After a flat burn OctoBurn takes a close-up photo and lists it with the time, energy and power.</p></div></li>
+  <li data-reveal><span class="numeral">01</span><div><h3 class="h4">Put the work on the bed</h3><p>And look at what else is there: the 10W module reaches 74 mm to the left of the beam.</p></div></li>
+  <li data-reveal><span class="numeral">02</span><div><h3 class="h4">Check the mode</h3><p>You don't pick it. No rotary means flat; rotary plugged in means rotary, once the object is measured.</p></div></li>
+  <li data-reveal><span class="numeral">03</span><div><h3 class="h4">Set the focus</h3><p>Bed plus thickness, a probe touch, or the red dot. The line underneath says the Z and where it came from.</p></div></li>
+  <li data-reveal><span class="numeral">04</span><div><h3 class="h4">Frame in LightBurn</h3><p>OctoBurn checks the outline against anything tall it knows about before a single move.</p></div></li>
+  <li data-reveal><span class="numeral">05</span><div><h3 class="h4">Arm, Start, and stay with it</h3><p>Two clicks to arm, for 30 minutes at most. Press Start in LightBurn and watch it burn.</p></div></li>
+  <li data-reveal><span class="numeral">06</span><div><h3 class="h4">Look at what you made</h3><p>After a flat burn OctoBurn takes a close-up photo and lists it with the time, energy and power.</p></div></li>
 </ol>
 
 <section class="section-header" id="probe">
   <div class="rule strong"></div>
-  <div class="sh-row">
+  <div class="sh-row" data-reveal>
     <span class="eyebrow">§06 · The probe</span>
     <span></span>
     <h2 class="sh-title">One print, <em>one pin</em></h2>
@@ -187,7 +218,7 @@
   <div class="rule"></div>
 </section>
 <div class="ob-probe">
-  <figure class="plate">
+  <figure class="plate" data-speed="0.12" data-tilt>
     <div class="plate-frame ob-dark">
       <video class="ob-video" autoplay muted loop playsinline preload="metadata" poster="img/probe-assembled.jpg">
         <source src="media/probe-turn.mp4" type="video/mp4">
@@ -200,7 +231,7 @@
     <p>The plate profile was measured off Snapmaker's own 10W laser CAD and checked with callipers against a real plate. An ESP32-C3 with a tiny OLED rides in a box on the front, drives the probe and reports every touch to OctoBurn over Wi-Fi. It swaps into the bay in place of the laser, which stays plugged in and parked, so the machine stays in laser mode.</p>
     <p>One rule matters on the rotary: <strong>home with the 10W seated, then swap to the probe without homing again.</strong> X homes about 12 mm differently with the probe on, and OctoBurn refuses to measure if you forget.</p>
     <p><a href="https://github.com/chrisns/octoburn/tree/main/hardware">The STL, OpenSCAD source, wiring and ESPHome firmware</a> are in the repository.</p>
-    <figure class="plate ob-small">
+    <figure class="plate ob-small" data-speed="-0.1">
       <div class="plate-frame ob-dark">
         <video class="ob-video" autoplay muted loop playsinline preload="metadata" poster="img/probe-tube.jpg">
           <source src="media/probe-tube.mp4" type="video/mp4">
@@ -213,7 +244,7 @@
 
 <section class="section-header" id="install">
   <div class="rule strong"></div>
-  <div class="sh-row">
+  <div class="sh-row" data-reveal>
     <span class="eyebrow">§07 · Install</span>
     <span></span>
     <h2 class="sh-title">Two minutes, <em>one URL</em></h2>
