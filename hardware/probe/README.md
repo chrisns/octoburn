@@ -1,15 +1,15 @@
 # Laser height probe
 
 A probe head for the Snapmaker A350's Quick Swap bay. It measures the height of a delicate
-object without touching it with the laser, so LightBurn can be given exact focus heights.
+object without touching it with the laser, so LightBurn gets exact focus heights.
 
-- **Head**: one printed part. It is a Quick Swap toolhead plate, with a probe shelf and an
+- **Head.** One printed part. It is a Quick Swap toolhead plate, with a probe shelf and an
   ESP32 box on its front face. A screw-on lid with a window for the OLED goes over the box.
-- **Probe**: a BLTouch-style clone. The pin sits on the 10W laser's beam axis, so a probe
+- **Probe.** A BLTouch-style clone. The pin sits on the 10W laser's beam axis, so a probe
   XY is the same as a laser XY.
-- **Brain**: an ESP32-C3 SuperMini with the 0.42" OLED, running ESPHome
+- **Board.** An ESP32-C3 SuperMini with the 0.42" OLED, running ESPHome
   ([`../firmware/laserprobe.yaml`](../firmware/)).
-- **Control**: the OctoBurn OctoPrint plugin (this repository). It steps Z down
+- **Control.** The OctoBurn OctoPrint plugin in this repository. It steps Z down
   and reads the probe over Wi-Fi.
 
 The laser stays **plugged in** while the probe head is in the bay. That keeps the firmware in
@@ -33,8 +33,8 @@ laser command.
 The plate profile is **Snapmaker's own**: the 10W laser's STEP file
 (`Snap-LASER-10W-ASSY.STEP`) includes the genuine Quick Swap toolhead plate. Its features:
 
-- 80 x 7 mm. Calipers on a real plate (on the 10W laser) read 80.02 x 7.03, and 77.10 across
-  the machine face from the left edge to the clamp lobe. The STEP says 76.8 there; the model
+- 80 x 7 mm. Calipers on a real plate, on the 10W laser, read 80.02 x 7.03, and 77.10 across
+  the machine face from the left edge to the clamp lobe. The STEP says 76.8 there. The model
   uses the real 77.10, with the extra 0.3 on the lobe.
 - 35° dovetails: the left edge runs full height, and the right edge has a clamp lobe
   between Y 21.8 and 59.5 that the bracket handle presses on.
@@ -61,20 +61,21 @@ centreline, at Y 20 and 60, and they're here too as blind holes.
 
 ## Print
 
-- PETG, **machine face down** (the model is already in that pose).
+- PETG, **machine face down**. The model is already in that pose.
 - The channel in the machine face is a 44 mm bridge: support it in the slicer. On the dual
   head, PLA as the support interface peels off PETG cleanly. The channel roof is not a mating
-  face, so a rough finish there does not matter. (A printed fin comb was tried and dropped: it
-  was hard to get out.)
+  face, so a rough finish there does not matter. A printed fin comb was tried and dropped because
+  it was hard to get out.
 - The lid prints flat.
 - Calipers across a print catch it about 0.4 mm above the bed, where the elephant-foot chamfer
   ends: a print true to the model reads 77.46 there. The first head read 76.80 at
   lobe_extra 0.52; aim for about 77.20 (the genuine plate reads 77.10).
 - Sliced in OrcaSlicer for the A350 Dual: PETG on T0,
   auto supports with 2 dense PLA interface layers on T1, 2 mm XY gap, no prime tower, bed held
-  at 75 C).
-- The full plate (or `laser-height-probe-fit-test.stl` to check the slide and the notch).
-  Also look at the bracket for anything that enters the channel or the two centreline holes.
+  at 75 C.
+- Print `laser-height-probe-fit-test.stl` first if you want to check the slide and the notch
+  before committing to the full head. Also check the bracket for anything that pokes into the
+  channel or the two centreline holes.
 
 ## Build
 
@@ -92,26 +93,26 @@ No extra components: the five probe wires go straight to the board (see `wiring.
 2. Solder red, brown, black and orange to the board from underneath. **Leave white off for now.**
    Feed the leads into the box through the slot in its right-hand wall. The lid clamps the
    board's edges. Power comes from a USB-C lead, routed with the laser cable.
-3. **Prove the white wire never drives 5 V.** The C3's pins are not 5 V tolerant, and with no
-   diode in the way that matters. Flash (step 4), power up, and press **probe_check** on the
+3. **Prove the white wire never drives 5 V.** The C3's pins are not 5 V tolerant, and no
+   diode protects them. Flash (step 4), power up, and press **probe_check** on the
    ESPHome page. That puts the pin up and the output in its "triggered" state. Then measure
    from white to GND:
    - About 0 V, or floating: the output is open-drain. Solder white to GPIO3.
-   - 5 V: press **probe_set_od_mode** (it sets open-drain and stores it in the probe's EEPROM),
-     power-cycle and measure again.
+   - 5 V: press **probe_set_od_mode**. It sets open-drain and stores it in the probe's EEPROM.
+     Power-cycle and measure again.
    - Still 5 V: this clone can't do open-drain. Put a 10k resistor in series in the white wire.
      That limits the current into the pin's clamp to about 0.15 mA.
-4. Flash: see [`../firmware/README.md`](../firmware/README.md) (the first flash is over USB).
+4. Flash: see [`../firmware/README.md`](../firmware/README.md). The first flash is over USB.
    If the OLED text is clipped or shifted, adjust `oled_offset_x/y`: the listing warns that
    this panel's window starts at (13,14). If the text is upside down, set `oled_rotation: "180"`.
 5. With white connected, press **probe_check** again: `probe_check_ok` should read ON. Some
-   clones lack touch mode; if yours does, press probe_deploy, push the pin up with a finger and
+   clones lack touch mode. If yours has none, press probe_deploy, push the pin up with a finger and
    watch `probe_latched` turn ON.
 
 What the left-out parts did, and what replaces them:
 
 - **Spike filter capacitor.** The firmware only accepts a trigger that stays high for 100 µs.
-  Noise from stepper wiring lasts microseconds; a real trigger lasts milliseconds.
+  Noise from stepper wiring lasts microseconds. A real trigger lasts milliseconds.
 - **Bulk capacitor on 5V.** Printer boards run BLTouches without one. If the board resets when
   the pin deploys, add a 470 µF capacitor across 5V/GND at the probe plug.
 - **Diode and pull-up.** Replaced by the chip's internal pull-up. This depends on the
@@ -125,15 +126,15 @@ The space below the board in the box is now spare.
    still plugged in.
    Slide the probe head in and tighten the handle.
 2. In OctoPrint's **Laser Height Probe** tab, enter the points (laser XY), choose the laser
-   module, and press Run. Each point is approached in coarse 0.5 mm steps, then 0.1, then
-   0.02 mm, and the fine pass is repeated until two readings agree.
+   module, and press Run. The plugin approaches each point in coarse 0.5 mm steps, then 0.1, then
+   0.02 mm, and repeats the fine pass until two readings agree.
 3. Swap the laser back in. The cable never came out, so there's no power cycle.
 4. Read the numbers. **Focus Z** is the absolute Z to put the laser at. **LightBurn Z offset**
    is the difference between each point and the datum point, for per-layer Z offsets (your
    LightBurn device has Enable Z and Relative-Z-only on).
 
    **Check the sign once before trusting it.** Give a test layer a +1 mm Z offset in LightBurn,
-   run it with the laser off (or at 0%), and watch which way Z moves. If LightBurn's sign is the
+   run it with the laser off or at 0%, and watch which way Z moves. If LightBurn's sign is the
    opposite of the plugin's, every offset doubles the focus error instead of cancelling it.
 
 ## Calibration (once per laser module)

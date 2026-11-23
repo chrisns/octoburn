@@ -8,7 +8,7 @@ every endpoint and the wiring.
 
 1. Install ESPHome (`pip install esphome`).
 2. Copy `secrets.example.yaml` to `secrets.yaml` and fill it in. Never commit `secrets.yaml`.
-3. Put two fonts next to the YAML (they are not included here, for licence reasons):
+3. Put these two fonts next to the YAML. Their licences keep them out of this repository.
    - `pixelmix.ttf`: the "pixelmix" bitmap font by Andrew Tyler.
    - `DejaVuSans.ttf`: from the DejaVu fonts (https://dejavu-fonts.github.io/).
    Any TTF works if you change the file names in the `font:` block.
@@ -21,5 +21,5 @@ The web server has no authentication: keep the board on a trusted network.
 `laserprobe_latch.h` is the interrupt latch that catches the probe's short trigger pulse.
 Pulse widths come from Klipper's `bltouch.py`.
 
-Then follow the build steps in [`../probe/README.md`](../probe/README.md): the open-drain check
+Then follow the build steps in [`../probe/README.md`](../probe/README.md). The open-drain check
 must happen before the white wire goes to GPIO3.

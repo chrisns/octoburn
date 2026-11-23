@@ -4,10 +4,10 @@ OctoBurn drives a Class 4 laser. Please report anything that could make it move 
 should not, or that exposes the printer, privately through GitHub's "Report a vulnerability"
 (Security tab), not in a public issue.
 
-Known by design, and documented in the README ("Access and authentication"):
+These gaps are by design. The README covers them under "Access and authentication":
 
 - The LightBurn bridge (GRBL over TCP, port 2323) has no authentication or encryption, because
-  LightBurn cannot send credentials. It accepts only the addresses in `bridge_allow`; firewall
+  LightBurn cannot send credentials. It accepts only the addresses in `bridge_allow`. Firewall
   it to the LightBurn computer and tunnel it over SSH for anything beyond the LAN.
 - The close-up camera images are served without an API key, because LightBurn's network camera
   cannot send one.
