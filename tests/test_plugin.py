@@ -1782,3 +1782,25 @@ def test_the_housing_check_restores_the_10w_frame_after_an_octoprint_restart(mod
     p._rotary = dict(_measured(), homed_head="probe")              # a probe-frame measurement proves nothing
     p._on_message(dict(type="done", mode="rotary", result=still))
     assert p._homed_head is None
+
+
+def test_disarming_mid_job_stops_the_beam_at_once(module, tmp_path):
+    """A disarm used to stop only new lines: the queued burn lines (and the firmware's last power)
+    kept the beam on (2026-11-23, a band test). Disarming a busy bridge now drops the queue,
+    quickstops and sends M5, as LightBurn's Stop does."""
+    from lhp_pkg import grbl_bridge
+    rig = Rig()
+    p = make_plugin(module, rig, tmp_path)
+    sender = BridgeSender()
+    p._grbl = grbl_bridge.Bridge(sender)
+    p._rotary = rotary_result()
+    p._settings.values["laser_modules"] = "10W = 5.75, 0, 0"
+    p._settings.values["selected_module"] = "10W"
+    p._printer.machine.security, p._printer.machine.roll = 0, 1
+    p._api_bridge_mode(dict(mode="rotary"))
+    p._api_bridge_laser(dict(laser=True))
+    p._grbl.queue.append(("G1 X10 S200", None, 0.1, "burn"))
+    assert p._grbl.state() == "Run"
+    p._api_bridge_laser(dict(laser=False))
+    assert not p._grbl.queue and "M410" in sender.urgent_lines and ("M5", False) in sender.lines
+    assert p._grbl.context.laser_armed()[0] is False
