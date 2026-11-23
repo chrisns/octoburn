@@ -3077,7 +3077,11 @@ class LaserHeightProbePlugin(
             self._log_line("LightBurn bridge: LASER ARMED for %d min." % config["bridge_arm_minutes"])
         else:
             self._grbl.context.laser_until = None
-            self._log_line("LightBurn bridge: laser disarmed.")
+            busy = self._grbl.state() != "Idle"
+            if busy:
+                # queued burn lines, and the firmware's last power, would keep the beam on: stop now
+                self._grbl.reset()
+            self._log_line("LightBurn bridge: laser disarmed%s." % (": the running job was stopped, beam off" if busy else ""))
         return dict(ok=True, laser=bool(data.get("laser")))
 
     def _keep_json(self, name, value):
