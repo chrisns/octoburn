@@ -170,6 +170,10 @@ DEFAULTS = dict(
     # after that cuts the power with emergency_power_switch (a Home Assistant switch on the
     # printer's mains, through purifier_ha_url and its token). Empty: no power cut.
     link_ok_s=2.0,
+    # The rotary's B ceiling, deg/min. The firmware allows 2700 (45 deg/s) and Luban uses 2400, but
+    # this firmware stopped answering five times on 2026-11-23, every time on B-dominant moves at
+    # 2000-2400 deg/min, never slower. Faster moves are slowed to it with their power scaled.
+    rotary_max_b_feed=1500.0,
     link_power_s=3.0,
     emergency_power_switch="",
 )
@@ -177,6 +181,7 @@ DEFAULTS = dict(
 # (low, high) for each number.
 RANGES = dict(
     link_ok_s=(0.5, 10.0),
+    rotary_max_b_feed=(300.0, 2400.0),
     link_power_s=(1.0, 30.0),
     http_timeout=(0.2, 10.0),
     # Wide on purpose: the laser-mode Z frame is the machine's, captured not assumed. Z 0 is

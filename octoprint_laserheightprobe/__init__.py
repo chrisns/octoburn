@@ -1620,7 +1620,8 @@ class LaserHeightProbePlugin(
             context = grbl_bridge.RotaryContext(surface, y_origin, rotary_gcode.Y_SIGN, rotary_gcode.B_SIGN,
                                                 seg_max=seg, beam_dx=module["dx"], beam_dy=module["dy"],
                                                 laser_until=laser_until, describe=describe,
-                                                module=module["name"], b_shift=b_shift)
+                                                module=module["name"], b_shift=b_shift,
+                                                max_b_feed=config.get("rotary_max_b_feed"))
         elif mode == "flat":
             if data.get("focus_z") is not None:
                 focus_z = float(data["focus_z"])
