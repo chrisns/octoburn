@@ -113,12 +113,13 @@ def test_the_10w_offset_puts_focus_above_the_trigger():
     assert s.focus(130.0) - s.top(130.0) == pytest.approx(5.75)
 
 
-def test_a_burn_faster_than_the_rotary_can_turn_is_refused():
-    # 78 mm: 2400 deg/min of B is 2400 * pi * 78 / 360 = 1633.6 mm/min of surface
+def test_a_burn_faster_than_the_rotary_can_turn_is_held_to_its_limit():
+    # 78 mm: 2400 deg/min of B is 2400 * pi * 78 / 360 = 1633.6 mm/min of surface. Too fast is
+    # slowed to the limit (power scaled with it, see the test below), not refused.
     s = rg.Surface(result(), focus_offset=5.75)
     fast = "G90\nM4\nG0X10A0\nG1A40S200F3000\nM5\n"
-    with pytest.raises(rg.TranslateError, match=r"1634 mm/min"):
-        rg.translate(fast.splitlines(), s, y_origin=50.0)
+    out, _ = rg.translate(fast.splitlines(), s, y_origin=50.0)
+    assert int([l for l in out if l.startswith("G1")][0].split("F")[-1]) <= 2401
     ok = fast.replace("F3000", "F1600")
     out, _ = rg.translate(ok.splitlines(), s, y_origin=50.0)
     burn = [l for l in out if l.startswith("G1")][0]
@@ -361,3 +362,17 @@ def test_no_obstacles_no_guard():
     e = rg.FlatEmitter(21.4)
     e.emit(_mv(150.0, 190.0))
     assert e.emit(_mv(160.0, 190.0, g=1, fire=True, power=76, minutes=10.0 / 1200))
+
+
+def test_a_burn_turning_b_too_fast_is_slowed_with_its_power_scaled_not_refused():
+    """LightBurn's feed on near-pure rotations can come out over the 2400 deg/min the rotary does
+    (2026-11-23: offset-fill contours alarmed at 2534 and 2560 deg/min). The move is slowed to the
+    limit and its power scaled by the same factor, so the energy per mm stays the same."""
+    s = rg.Surface(result(), focus_offset=0.0)
+    lines = ["G90", "M3", "G0X10A0", "G1A10S200F3000", "M5"]     # 3000 deg/min of pure rotation
+    out, _ = rg.translate(lines, s, y_origin=50.0)
+    burn = [l for l in out if l.startswith("G1") and " S" in l and " S0" not in l][0]
+    f = int(burn.split("F")[1])
+    sv = int(re.search(r" S(\d+)", burn).group(1))
+    assert f == pytest.approx(2400, abs=3)                       # B at the limit
+    assert sv == pytest.approx(200 * 2400 / 3000.0, abs=1)        # power scaled with it
