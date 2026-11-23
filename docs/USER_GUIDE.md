@@ -296,6 +296,12 @@ mistakes. They do not replace you.
   clears a tape roll or a lid beside the work.
 - **Rotary heights.** Nothing goes below the object's top anywhere on the bed, because the whole X beam
   drops with Z.
+- **A printer that stops answering.** If the printer stops acknowledging burn lines mid-job,
+  the link guard first covers one lost reply, then stops the burn and turns the laser off. If
+  you have set an emergency power switch in Home Assistant, it cuts the printer's power when the
+  printer still does not answer.
+- **Rotary speed.** Rotary moves never turn faster than 1500 deg/min by default. Faster burn
+  moves are slowed with their power scaled down to match, so the burn depth stays the same.
 - **Air purifier.** It starts with the burn, picks its gear from the smoke the air sensor sees,
   and runs on until the air is clear.
 - **The network.** The LightBurn link (GRBL over TCP) has no password. Let only the LightBurn
