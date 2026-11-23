@@ -163,7 +163,11 @@ class MachinePrinter(object):
     def is_operational(self):
         return self.operational
 
+    def fake_ack(self):
+        self.fake_acks = getattr(self, "fake_acks", 0) + 1
+
     def commands(self, commands, tags=None, **kwargs):
+        self.sent_commands = getattr(self, "sent_commands", []) + list(commands)
         for command in commands:
             for line in self.machine.execute(command):
                 if self.bridge is not None:

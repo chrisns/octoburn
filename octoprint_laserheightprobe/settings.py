@@ -165,10 +165,19 @@ DEFAULTS = dict(
     purifier_alarm_pm25=300.0,      # this much smoke starts it whatever the dose
     purifier_tau_s=None,            # the smoke's decay time with the purifier on, learnt from run-ons
     purifier_enclosure_fan=True,    # the enclosure fan blows into the purifier's hose: run it with it
+    # The serial link guard (linkguard.py): a burn line whose "ok" never comes. After link_ok_s the
+    # lost ok is faked; a second loss, or a silent printer, stops the burn; no real ok link_power_s
+    # after that cuts the power with emergency_power_switch (a Home Assistant switch on the
+    # printer's mains, through purifier_ha_url and its token). Empty: no power cut.
+    link_ok_s=2.0,
+    link_power_s=3.0,
+    emergency_power_switch="",
 )
 
 # (low, high) for each number.
 RANGES = dict(
+    link_ok_s=(0.5, 10.0),
+    link_power_s=(1.0, 30.0),
     http_timeout=(0.2, 10.0),
     # Wide on purpose: the laser-mode Z frame is the machine's, captured not assumed. Z 0 is
     # the bottom (soft endstops clamp there); safe_z > z_floor is checked separately.
@@ -625,6 +634,17 @@ def purifier_config(raw):
                 hcho=entities["purifier_hcho"], policy=policy, tau_s=config["purifier_tau_s"],
                 enclosure_fan=config["purifier_enclosure_fan"],
                 pointer_s_max=config["pointer_s_max"])
+
+
+def link_config(raw):
+    """The link guard's settings. Raises SettingsError."""
+    raw = dict(DEFAULTS, **(raw or {}))
+    switch = _text(raw.get("emergency_power_switch")).strip()
+    if switch and not _ENTITY.match(switch):
+        raise SettingsError("emergency_power_switch %r is not a Home Assistant entity id (like switch.name)" % switch)
+    return dict(ok_s=number("link_ok_s", raw.get("link_ok_s")), power_s=number("link_power_s", raw.get("link_power_s")),
+                switch=switch, ha_url=_text(raw.get("purifier_ha_url")).strip().rstrip("/"),
+                ha_token=_text(raw.get("purifier_ha_token")))
 
 
 def parse_allow(text):

@@ -1804,3 +1804,30 @@ def test_disarming_mid_job_stops_the_beam_at_once(module, tmp_path):
     p._api_bridge_laser(dict(laser=False))
     assert not p._grbl.queue and "M410" in sender.urgent_lines and ("M5", False) in sender.lines
     assert p._grbl.context.laser_armed()[0] is False
+
+
+def test_the_link_guard_fakes_a_lost_ok_and_its_stop_resets_the_bridge_with_the_beam_off(module, tmp_path):
+    """Wired through the hooks: a burn line with no ok while temperature reports keep coming
+    gets a faked ok; a second loss stops the burn (bridge reset, M5)."""
+    from lhp_pkg import grbl_bridge
+    rig = Rig()
+    p = make_plugin(module, rig, tmp_path)
+    p._grbl = grbl_bridge.Bridge(BridgeSender())
+    clock = [0.0]
+    p._link_start()
+    p._link_running = False                                   # step by hand
+    p._link.clock = lambda: clock[0]
+    p._link_power_off = lambda: None
+    p.gcode_sent(None, "sent", "G1 X156.1 Y166.5 Z145.8 B-243.9 S46 F2219", None, "G1", tags=set())
+    clock[0] = 1.0
+    p.gcode_received(None, " T:0.00 /0.00 B:-14.06 /0.00")
+    clock[0] = 2.5
+    p._link.step()
+    assert getattr(p._printer, "fake_acks", 0) == 1
+    p.gcode_sent(None, "sent", "G1 X156.1 Y166.6 Z145.8 B-243.7 S46 F2219", None, "G1", tags=set())
+    clock[0] = 3.5
+    p.gcode_received(None, " T:0.00 /0.00 B:-14.06 /0.00")
+    clock[0] = 5.0
+    p._link.step()
+    assert p._printer.fake_acks == 2 and "M5" in p._printer.sent_commands
+    assert [k for _, k in p._link.events] == ["fake_ack", "stop"]
