@@ -327,6 +327,7 @@ class RotaryEmitter(object):
         self.prev = None                          # machine dict(y, b, z) of the last move sent
         self.armed = False                        # "M3 S0" sent since the last M5
         self.burned, self.fastest_b = 0.0, 0.0
+        self.slowed = 0                     # burn moves slowed (power scaled with them) to the B limit
         # Split moves longer than this (mm of surface) so a stop waits behind short blocks and
         # Z follows the runout between the ends (None: no splitting, as for a file).
         self.seg_max = seg_max
@@ -413,17 +414,23 @@ class RotaryEmitter(object):
                 if not minutes:
                     raise TranslateError("a burn with no speed")
                 b_rate = db / minutes
-                self.fastest_b = max(self.fastest_b, b_rate)
+                power = mv["power"]
                 if b_rate > self.max_b_feed + 1e-6:
-                    surf = math.hypot(dlin, db / self.deg_per_mm)
-                    fits = surf / (minutes * b_rate / self.max_b_feed)
-                    raise TranslateError("a burn turns B at %.0f deg/min, over the %.0f the rotary can "
-                                         "do (the firmware would slow it and over-burn): set the "
-                                         "LightBurn speed to %.0f mm/min (%.1f mm/s) or less"
-                                         % (b_rate, self.max_b_feed, fits, fits / 60.0))
+                    # Too fast for the rotary (the firmware would slow it and over-burn; LightBurn's
+                    # feed on near-pure rotations runs high). Slow this move to the limit and scale its
+                    # power by the same factor: the energy per mm stays as LightBurn meant.
+                    k = self.max_b_feed / b_rate
+                    minutes /= k
+                    f = fw / minutes
+                    power = power * k
+                    b_rate = self.max_b_feed
+                    self.slowed += 1
+                self.fastest_b = max(self.fastest_b, b_rate)
                 self.burned += math.hypot(dlin, db / self.deg_per_mm)
+            else:
+                power = mv["power"]
             out.append("G1 X%.3f Y%.3f Z%.3f B%.3f S%d F%d"
-                       % (mx + self.bx, y + self.by, mz, b - self.b_shift, int(round(mv["power"])),
+                       % (mx + self.bx, y + self.by, mz, b - self.b_shift, int(round(power)),
                           max(1, int(round(f)))))
         self.prev = dict(y=y, b=b, z=mz, x=mx)
         return out
