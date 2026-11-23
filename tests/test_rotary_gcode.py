@@ -376,3 +376,19 @@ def test_a_burn_turning_b_too_fast_is_slowed_with_its_power_scaled_not_refused()
     sv = int(re.search(r" S(\d+)", burn).group(1))
     assert f == pytest.approx(2400, abs=3)                       # B at the limit
     assert sv == pytest.approx(200 * 2400 / 3000.0, abs=1)        # power scaled with it
+
+
+def test_a_lower_b_ceiling_slows_turn_heavy_burns_and_travels():
+    """rotary_max_b_feed (1500 by default in the plugin): burns over it are slowed with power
+    scaled; a turn-heavy G0 travel is slowed so B stays under it too."""
+    s = rg.Surface(result(), focus_offset=0.0)
+    em = rg.RotaryEmitter(s, y_origin=50.0, max_b_feed=1500.0)
+    out, _ = rg.translate(["G90", "M3", "G0X10A0", "G1A10S200F2400", "G0X10A200", "M5"], s, y_origin=50.0,
+                          max_b_feed=1500.0)
+    burn = [l for l in out if l.startswith("G1") and " S0" not in l and " S" in l][0]
+    assert int(burn.split("F")[1]) == pytest.approx(1500, abs=3)
+    assert int(re.search(r" S(\d+)", burn).group(1)) == pytest.approx(200 * 1500 / 2400.0, abs=1)
+    travel = [l for l in out if l.startswith("G0") and " B" in l][-1]
+    f = int(travel.split("F")[1])
+    b0 = float(re.search(r" B(-?[\d.]+)", [l for l in out if l.startswith("G1") and " S" in l][0]).group(1))
+    assert f <= 1500 + 1                                   # a nearly pure turn: F is about the B rate

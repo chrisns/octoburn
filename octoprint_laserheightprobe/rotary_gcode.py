@@ -402,8 +402,13 @@ class RotaryEmitter(object):
         db, dz = abs(b - p["b"]), abs(mz - p["z"])
         fw = math.sqrt(dlin * dlin + db * db + dz * dz)       # the firmware's length (B deg as mm)
         if mv["g"] == 0:
+            # the firmware counts B degrees as mm in a move's length: a turn-heavy travel at the travel
+            # feed would spin B past the ceiling (fast B-dominant streams hang this firmware, 2026-11-23)
+            ft = self.travel_feed
+            if db > 1e-9 and ft * db / fw > self.max_b_feed:
+                ft = self.max_b_feed * fw / db
             out.append("G0 X%.3f Y%.3f Z%.3f B%.3f F%d" % (mx + self.bx, y + self.by, mz, b - self.b_shift,
-                                                          self.travel_feed))
+                                                          max(1, int(ft))))
         elif fw < 1e-9:
             if not mv["fire"]:
                 out.append("G1 S0")

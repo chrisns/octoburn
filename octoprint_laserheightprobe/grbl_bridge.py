@@ -818,8 +818,9 @@ class RotaryContext(_Context):
     mode = "rotary"
 
     def __init__(self, surface, y_origin, y_sign=1, b_sign=-1, seg_max=5.0, beam_dx=0.0, beam_dy=0.0,
-                 b_shift=0.0, **kw):
+                 b_shift=0.0, max_b_feed=None, **kw):
         _Context.__init__(self, **kw)
+        self.max_b_feed = max_b_feed                         # deg/min ceiling for B (None: the emitter's)
         self.surface, self.y_origin, self.y_sign, self.b_sign = surface, y_origin, y_sign, b_sign
         self.beam_dx, self.beam_dy = float(beam_dx or 0.0), float(beam_dy or 0.0)
         self.b_shift = float(b_shift or 0.0)                 # object angle = firmware B + b_shift
@@ -834,9 +835,10 @@ class RotaryContext(_Context):
         return Reader(("X", "A"), deg_per_mm=self.deg_per_mm)
 
     def emitter(self):
+        kw = dict(max_b_feed=self.max_b_feed) if self.max_b_feed else {}
         return RotaryEmitter(self.surface, self.y_origin, self.y_sign, self.b_sign,
                              seg_max=self.seg_max, beam_dx=self.beam_dx, beam_dy=self.beam_dy,
-                             b_shift=self.b_shift)
+                             b_shift=self.b_shift, **kw)
 
     def jog_move(self, u0, v0, words, relative, feed):
         u, v = u0, v0
