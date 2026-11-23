@@ -1755,3 +1755,30 @@ def test_only_a_home_that_moves_x_forgets_which_head_x_was_homed_with(module, tm
         p._homed_head = "laser"
         p.gcode_sent(None, "sent", line, None, "G28", tags=set())
         assert p._homed_head is None, line
+
+
+def test_the_housing_check_restores_the_10w_frame_after_an_octoprint_restart(module, tmp_path):
+    """A restart forgets which head X was homed with. The housing check may run anyway (it reads
+    the frame), and a housing within 3 mm of a measurement made in the 10W's frame proves X is
+    still in that frame; ~12 mm off proves nothing (probe frame, or the rotary moved)."""
+    rig = Rig()
+    p = make_plugin(module, rig, tmp_path)
+    p._log_line = lambda text: None
+    p._session = type("S", (), {"ok": True, "reason": None})()
+    p._rotary = dict(_measured(), homed_head="laser")
+    p._homed_head = None
+    p._start = lambda points, mode, config: dict(started=True, mode=mode)
+    assert p._api_rotary_check({})["started"]                     # the check is allowed
+    with pytest.raises(ValueError, match="not homed with the 10W"):
+        p._api_rotary(dict(params={"seed": "last"}))                # a measure still is not
+    still = dict(check_only=True, housing_shift=dict(dx=0.71, dz=-0.1, moved=False, z_differs=False))
+    p._on_message(dict(type="done", mode="rotary", result=still))
+    assert p._homed_head == "laser"
+    p._homed_head = None
+    off = dict(check_only=True, housing_shift=dict(dx=-12.8, dz=0.0, moved=True, z_differs=False))
+    p._rotary = dict(_measured(), homed_head="laser")
+    p._on_message(dict(type="done", mode="rotary", result=off))
+    assert p._homed_head is None
+    p._rotary = dict(_measured(), homed_head="probe")              # a probe-frame measurement proves nothing
+    p._on_message(dict(type="done", mode="rotary", result=still))
+    assert p._homed_head is None

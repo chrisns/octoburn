@@ -56,6 +56,7 @@ _COUNT_B_RE = re.compile(r"Count .*\bB:\s*(-?\d+)")
 # measured so far (the XY-near-the-chuck rule, 2026-11-19).
 ROTARY_TURN_Z = 160.0
 ROTARY_FILE = "rotary.json"
+FRAME_FROM_HOUSING_MM = 3.0               # housing check vs a 10W-frame measurement: the 10W frame within this
 ROTARY_PARTIAL_FILE = "rotary_partial.json"     # a run that stopped part way, kept to resume from
 PIN_FILE = "beam_offset_pin.json"     # the pin-on-the-dot record, kept across a restart
 MAP_FILE = "height_map.json"
@@ -3883,7 +3884,9 @@ class LaserHeightProbePlugin(
         if not self._session.ok:
             raise ValueError("do the tap test first (%s)" % self._session.reason)
         homed = getattr(self, "_homed_head", None)
-        if homed != "laser":
+        if homed != "laser" and not (data.get("check") and homed is None):
+            # (with the head unknown, after a restart, the housing check may run: it reads the
+            # frame and restores the note when it matches a 10W-frame measurement)
             # the burns happen in the laser's frame; X homes ~12 mm differently with the probe on
             raise ValueError("X was %s: home with the 10W seated, then swap to the probe without homing again (X homes "
                              "about 12 mm differently with the probe on, and the burns happen in the laser's frame)"
@@ -4564,6 +4567,14 @@ class LaserHeightProbePlugin(
                 text = ("The rotary has not moved: the housing is X%+.2f Z%+.2f mm from the last measurement%s."
                         % (shift.get("dx", 0.0), shift.get("dz", 0.0),
                            " (Z differs: the probe may sit differently on the head)" if shift.get("z_differs") else ""))
+            if (self._rotary is not None and self._rotary.get("homed_head") == "laser"
+                    and getattr(self, "_homed_head", None) != "laser" and shift.get("dx") is not None
+                    and abs(shift["dx"]) <= FRAME_FROM_HOUSING_MM):
+                # The housing sits where a measurement made in the 10W's frame put it: X is in the
+                # 10W's frame (a probe-on home would put it ~12 mm off). Restores the note after a restart.
+                self._homed_head = "laser"
+                text += (" The housing agrees with the last measurement (made with X homed with the 10W) to "
+                         "%.2f mm: X is still in the 10W's frame." % abs(shift["dx"]))
             if self._rotary is not None:
                 self._rotary["last_check"] = dict(time=time.time(), **shift)
                 self._keep_rotary(self._rotary)
