@@ -1831,3 +1831,4 @@ def test_the_link_guard_fakes_a_lost_ok_and_its_stop_resets_the_bridge_with_the_
     p._link.step()
     assert p._printer.fake_acks == 2 and "M5" in p._printer.sent_commands
     assert [k for _, k in p._link.events] == ["fake_ack", "stop"]
+    assert p._grbl.state() == "Alarm"                         # LightBurn's next line is refused: its job ends

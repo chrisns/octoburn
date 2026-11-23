@@ -1035,7 +1035,10 @@ class LaserHeightProbePlugin(
         if self._grbl is not None:
             if self._grbl.context is not None:
                 self._grbl.context.laser_until = None
-            self._grbl.reset()
+            # an alarm, not a quiet reset: LightBurn's next line is refused and its job ends instead of
+            # waiting for ever; disarming (or LightBurn's Stop) clears it
+            self._grbl.fault("the printer stopped answering mid-burn: the link guard stopped it, beam off. "
+                             "Disarm in OctoPrint (or press Stop) to clear")
         self._printer.commands(["M5"])
 
     def _link_power_off(self):

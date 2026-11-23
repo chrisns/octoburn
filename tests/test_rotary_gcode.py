@@ -392,3 +392,16 @@ def test_a_lower_b_ceiling_slows_turn_heavy_burns_and_travels():
     f = int(travel.split("F")[1])
     b0 = float(re.search(r" B(-?[\d.]+)", [l for l in out if l.startswith("G1") and " S" in l][0]).group(1))
     assert f <= 1500 + 1                                   # a nearly pure turn: F is about the B rate
+
+
+def test_microscopic_burn_moves_are_merged_into_the_next_not_sent():
+    """A 0.15 mm loop of 0.07 mm segments (an offset fill's inner speck) hung the firmware: burn
+    moves under 0.1 mm of surface are skipped and the next move is drawn from the last point sent."""
+    s = rg.Surface(result(), focus_offset=0.0)
+    lines = ["G90", "M3", "G0X10A0", "G1X10.05S200F600", "G1X10.02A0.05S200", "G1X10.0A0.0S200",
+             "G1X12A0S200", "M5"]
+    out, _ = rg.translate(lines, s, y_origin=50.0)
+    burns = [l for l in out if l.startswith("G1") and re.search(r" S[1-9]", l)]
+    assert len(burns) == 1                                  # only the 2 mm move goes out
+    y = float(re.search(r" Y(-?[\d.]+)", burns[0]).group(1))
+    assert y == pytest.approx(50.0 + 12.0, abs=0.01)        # and it ends where LightBurn meant
