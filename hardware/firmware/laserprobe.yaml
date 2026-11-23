@@ -1,0 +1,579 @@
+# Laser height probe: a BLTouch-style probe on a printed Snapmaker 2.0 Quick Swap plate,
+# driven by an ESP32-C3 SuperMini with the 0.42" 72x40 OLED.
+#
+# OctoPrint (the LaserHeightProbe plugin) steps Z down and reads this device over the
+# ESPHome web_server REST API. Entity NAMES equal their object ids so the URLs are the same
+# under the old (/binary_sensor/<object_id>) and new (/binary_sensor/<name>) REST schemes:
+#
+#   POST /button/probe_arm/press          clear latch, then deploy the pin (pin_down 680 ms)
+#   POST /button/latch_clear/press        clear the latch only
+#   POST /button/probe_stow/press         pin_up
+#   POST /button/probe_reset/press        alarm release + pin_up
+#   POST /button/probe_check/press        pin_up + touch_mode, read output (wiring test)
+#   POST /button/probe_set_od_mode/press  set open-drain output and store it in the probe EEPROM
+#   GET  /binary_sensor/probe_latched     true once a rising edge was seen since the last clear
+#   GET  /binary_sensor/probe_raw         live level of the probe output (HIGH = triggered/alarm)
+#   GET  /binary_sensor/probe_check_ok    result of the last probe_check
+#   GET  /binary_sensor/probe_busy        a probe command is still being sent: wait before arming
+#   GET  /sensor/trigger_count            rising edges since boot
+#   POST /select/job_state/set?option=probing     display only
+#   POST /number/result_z/set?value=123.456       display only
+#   POST /number/result_focus/set?value=125.0     display only
+#
+# Wiring (no other parts): see ../probe/wiring.svg
+#   GPIO4  -> probe control (orange, servo signal)          50 Hz PWM, pulse widths below
+#   GPIO3  <- probe Z-min (white), direct; internal pull-up. The probe MUST be in open-drain
+#             output mode (BLTouch default). Check a clone with a meter first, and use the
+#             probe_set_od_mode button if it drives 5 V. See the README.
+#   5V/GND -> probe power (red, brown + black)
+#   GPIO5/GPIO6 = OLED SDA/SCL (on the board), GPIO8 = blue LED (active low)
+#   GPIO9 = the board's BOOT button: short press deploys / stows, long press (1.5 s) resets
+#
+# Pulse widths are Klipper's (klippy/extras/bltouch.py): pin_down 650us, touch_mode 1165us,
+# pin_up 1475us, self_test 1780us, reset 2190us, set_OD_output_mode 2091us,
+# output_mode_store 1884us, on a 20 ms period; PWM off after each command.
+
+substitutions:
+  name: laserprobe
+  # The listing says this panel's visible window starts at (13,14) of a 128x64 controller,
+  # unlike other 0.42" boards. If text is clipped or shifted, tune these two.
+  oled_offset_x: "0"
+  oled_offset_y: "0"
+  oled_rotation: "180"
+
+# Network: put wifi_ssid, wifi_password, ota_password and encryption_key in secrets.yaml.
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  reboot_timeout: 15min
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+logger:
+  level: DEBUG
+  baud_rate: 0
+
+
+esphome:
+  name: ${name}
+  includes:
+    - laserprobe_latch.h
+  on_boot:
+    priority: 600
+    then:
+      - lambda: laserprobe::setup(3);
+
+# The API would reboot the board after 15 min without a Home Assistant client. That would
+# reboot the probe mid-job (and clear the trigger latch) whenever HA isn't connected, so it is off.
+api:
+  reboot_timeout: 0s
+  encryption:
+    key: !secret encryption_key
+
+# The ESP32-C3 SuperMini.
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+# REST API for the OctoPrint plugin (LAN only, no auth).
+web_server:
+  port: 80
+  version: 3
+
+globals:
+  - id: deployed
+    type: bool
+    initial_value: "false"
+  - id: check_ok
+    type: bool
+    initial_value: "false"
+  - id: od_wire
+    type: bool
+    initial_value: "false"
+  - id: od_drives
+    type: bool
+    initial_value: "false"
+  - id: checking             # a wiring check holds the output HIGH on purpose: no auto-reset
+    type: bool
+    initial_value: "false"
+  - id: toast_text           # brief confirmation on the OLED after a BOOT button press
+    type: std::string
+    initial_value: '""'
+  - id: toast_until
+    type: uint32_t
+    initial_value: "0"
+
+output:
+  - platform: ledc
+    id: servo_pwm
+    pin: GPIO4
+    frequency: 50Hz
+  - platform: gpio
+    id: blue_led
+    pin:
+      number: GPIO8
+      inverted: true
+
+script:
+  # Send one probe command: hold the pulse train for hold_ms, then stop the PWM.
+  - id: probe_cmd
+    mode: queued
+    parameters:
+      pulse_us: float
+      hold_ms: int
+    then:
+      - output.set_level:
+          id: servo_pwm
+          level: !lambda "return pulse_us / 20000.0f;"
+      - delay: !lambda "return hold_ms;"
+      - output.turn_off: servo_pwm
+  # BOOT button, short press: deploy if stowed or triggered (reset first if the output is held
+  # HIGH, as Chris's clone needs), stow if deployed. Ignored while the plugin is moving Z: a
+  # stow mid-descent would let the probe body come down onto the work.
+  - id: button_toggle
+    mode: single
+    then:
+      - if:
+          condition:
+            lambda: |-
+              std::string s = id(job_state).current_option();
+              return s == "probing" || s == "homing" || s == "calibrate";
+          then:
+            - lambda: |-
+                id(toast_text) = "BUSY";
+                id(toast_until) = millis() + 900;
+          else:
+            - if:
+                condition:
+                  lambda: return id(deployed);
+                then:
+                  - lambda: |-
+                      id(toast_text) = "STOW";
+                      id(toast_until) = millis() + 900;
+                  - script.execute: { id: probe_cmd, pulse_us: 1475, hold_ms: 680 }
+                  - globals.set: { id: deployed, value: "false" }
+                else:
+                  - lambda: |-
+                      id(toast_text) = "ARM";
+                      id(toast_until) = millis() + 900;
+                  - if:
+                      condition:
+                        lambda: return laserprobe::level();
+                      then:
+                        - script.execute: { id: probe_cmd, pulse_us: 2190, hold_ms: 1000 }
+                        - script.wait: probe_cmd
+                  - lambda: laserprobe::clear();
+                  - script.execute: { id: probe_cmd, pulse_us: 650, hold_ms: 680 }
+                  - globals.set: { id: deployed, value: "true" }
+  # BOOT button, long press: probe reset (clears an alarm, stows). Also ignored mid-job.
+  - id: button_reset
+    mode: single
+    then:
+      - if:
+          condition:
+            lambda: |-
+              std::string s = id(job_state).current_option();
+              return !(s == "probing" || s == "homing" || s == "calibrate");
+          then:
+            - lambda: |-
+                id(toast_text) = "RESET";
+                id(toast_until) = millis() + 900;
+            - script.execute: { id: probe_cmd, pulse_us: 2190, hold_ms: 1000 }
+            - script.wait: probe_cmd
+            - lambda: laserprobe::clear();
+            - globals.set: { id: deployed, value: "false" }
+
+button:
+  # A restart button.
+  - platform: restart
+    name: Restart
+  - platform: template
+    name: probe_arm
+    on_press:
+      - lambda: laserprobe::clear();
+      - script.execute: { id: probe_cmd, pulse_us: 650, hold_ms: 680 }
+      - globals.set: { id: deployed, value: "true" }
+  - platform: template
+    name: probe_deploy
+    on_press:
+      - script.execute: { id: probe_cmd, pulse_us: 650, hold_ms: 680 }
+      - globals.set: { id: deployed, value: "true" }
+  - platform: template
+    name: latch_clear
+    on_press:
+      - lambda: laserprobe::clear();
+  # A HIGH output here means a held trigger or an alarm: some clones (Chris's) ignore pin_up
+  # then, and only a reset (which also stows) brings the output back LOW.
+  - platform: template
+    name: probe_stow
+    on_press:
+      - if:
+          condition:
+            lambda: return laserprobe::level();
+          then:
+            - script.execute: { id: probe_cmd, pulse_us: 2190, hold_ms: 1000 }
+          else:
+            - script.execute: { id: probe_cmd, pulse_us: 1475, hold_ms: 680 }
+      - globals.set: { id: deployed, value: "false" }
+  - platform: template
+    name: probe_reset
+    on_press:
+      - script.execute: { id: probe_cmd, pulse_us: 2190, hold_ms: 1000 }
+      - globals.set: { id: deployed, value: "false" }
+  - platform: template
+    name: probe_self_test
+    on_press:
+      - script.execute: { id: probe_cmd, pulse_us: 1780, hold_ms: 100 }
+  - platform: template
+    name: probe_touch_mode
+    on_press:
+      - script.execute: { id: probe_cmd, pulse_us: 1165, hold_ms: 100 }
+  # One-off: put the probe in open-drain output mode and store it, so the white wire can never
+  # drive 5 V into the GPIO. Marlin's sequence (BLTouch::mode_conv_proc): the pin must be
+  # DEPLOYED, then set mode, store, set mode again, stow, ~500 ms each. Pre-V3 clones ignore
+  # it; probe_od_check shows whether it took.
+  - platform: template
+    name: probe_set_od_mode
+    on_press:
+      - script.execute: { id: probe_cmd, pulse_us: 650, hold_ms: 680 }
+      - script.wait: probe_cmd
+      - script.execute: { id: probe_cmd, pulse_us: 2091, hold_ms: 500 }
+      - script.wait: probe_cmd
+      - script.execute: { id: probe_cmd, pulse_us: 1884, hold_ms: 500 }
+      - script.wait: probe_cmd
+      - script.execute: { id: probe_cmd, pulse_us: 2091, hold_ms: 500 }
+      - script.wait: probe_cmd
+      - script.execute: { id: probe_cmd, pulse_us: 1475, hold_ms: 680 }
+      - script.wait: probe_cmd
+      - lambda: laserprobe::clear();
+      - globals.set: { id: deployed, value: "false" }
+  # Klipper's sensor test: with the pin up, touch (switch) mode must make the output read
+  # HIGH. Proves the signal wire, diode and pull-up. Some clones lack touch mode.
+  - platform: template
+    name: probe_check
+    on_press:
+      - globals.set: { id: checking, value: "true" }
+      - globals.set: { id: check_ok, value: "false" }
+      - script.execute: { id: probe_cmd, pulse_us: 1475, hold_ms: 680 }
+      - script.wait: probe_cmd
+      - script.execute: { id: probe_cmd, pulse_us: 1165, hold_ms: 100 }
+      - script.wait: probe_cmd
+      - delay: 50ms
+      - lambda: id(check_ok) = laserprobe::level();
+      - script.execute: { id: probe_cmd, pulse_us: 2190, hold_ms: 1000 }
+      - script.wait: probe_cmd
+      - lambda: laserprobe::clear();
+      - globals.set: { id: deployed, value: "false" }
+      - globals.set: { id: checking, value: "false" }
+  # Firmware version of the meter check on the white wire: see set_pull_down() in
+  # laserprobe_latch.h. Safe to connect: probe_wire_ok ON and probe_drives_high OFF.
+  - platform: template
+    name: probe_od_check
+    on_press:
+      - globals.set: { id: checking, value: "true" }
+      - globals.set: { id: od_wire, value: "false" }
+      - globals.set: { id: od_drives, value: "false" }
+      - script.execute: { id: probe_cmd, pulse_us: 1475, hold_ms: 680 }
+      - script.wait: probe_cmd
+      - script.execute: { id: probe_cmd, pulse_us: 1165, hold_ms: 100 }
+      - script.wait: probe_cmd
+      - delay: 50ms
+      - lambda: |-
+          id(od_wire) = laserprobe::level();
+          laserprobe::set_pull_down();
+      - delay: 20ms
+      - lambda: |-
+          id(od_drives) = laserprobe::level();
+          laserprobe::restore_pull_up();
+      - script.execute: { id: probe_cmd, pulse_us: 2190, hold_ms: 1000 }
+      - script.wait: probe_cmd
+      - lambda: laserprobe::clear();
+      - globals.set: { id: deployed, value: "false" }
+      - globals.set: { id: checking, value: "false" }
+
+binary_sensor:
+  # The board's BOOT button (GPIO9). A strapping pin, but only read at power-up: after boot it
+  # is a normal input. Holding it while plugging in still enters the flasher, as before.
+  - platform: gpio
+    name: boot_button
+    pin:
+      number: GPIO9
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+      ignore_strapping_warning: true
+    filters:
+      - delayed_on_off: 20ms
+    on_click:
+      - min_length: 30ms
+        max_length: 800ms
+        then:
+          - script.execute: button_toggle
+      - min_length: 1500ms
+        max_length: 10s
+        then:
+          - script.execute: button_reset
+  - platform: template
+    name: probe_latched
+    lambda: return laserprobe::is_latched();
+    on_press:
+      # Default mode stows the pin itself after a trigger.
+      - globals.set: { id: deployed, value: "false" }
+      - output.turn_on: blue_led
+      # Chris's clone then holds its output HIGH until a reset, and that output DRIVES (it is
+      # not open drain), so reset it here rather than leave GPIO3 driven until the next arm.
+      # The latch and trigger_count are not touched: nothing the plugin reads is lost. The
+      # plugin waits for probe_busy to clear before it deploys again.
+      - delay: 150ms
+      - if:
+          condition:
+            lambda: return laserprobe::level() && !id(checking);
+          then:
+            - script.execute: { id: probe_cmd, pulse_us: 2190, hold_ms: 1000 }
+    on_release:
+      - output.turn_off: blue_led
+  - platform: template
+    name: probe_raw
+    lambda: return laserprobe::level();
+  # ON while a probe command (deploy, stow, reset...) is still being sent. The plugin waits for
+  # OFF before it deploys, so a deploy never queues behind the auto-reset and arrives late.
+  - platform: template
+    name: probe_busy
+    lambda: return id(probe_cmd).is_running();
+  - platform: template
+    name: probe_check_ok
+    lambda: return id(check_ok);
+  - platform: template
+    name: probe_wire_ok
+    lambda: return id(od_wire);
+  - platform: template
+    name: probe_drives_high
+    lambda: return id(od_drives);
+
+sensor:
+  # Uptime, every few seconds: the OctoPrint plugin watches it to detect a reboot (which clears
+  # the latch).
+  - platform: uptime
+    name: uptime
+    update_interval: 5s
+  - platform: template
+    name: trigger_count
+    accuracy_decimals: 0
+    update_interval: 250ms
+    lambda: return (float) laserprobe::count();
+  - platform: wifi_signal
+    name: wifi_signal
+    id: rssi
+    update_interval: 30s
+
+select:
+  - platform: template
+    name: job_state
+    id: job_state
+    optimistic: true
+    options: [idle, homing, probing, done, error, calibrate]
+    initial_option: idle
+
+number:
+  - platform: template
+    name: result_z
+    id: result_z
+    optimistic: true
+    min_value: -1000
+    max_value: 1000
+    step: 0.001
+    initial_value: 0
+    on_value:
+      # skip the initial value published at boot
+      - lambda: if (millis() > 3000) laserprobe::push_result(x);
+  - platform: template
+    name: result_focus
+    id: result_focus
+    optimistic: true
+    min_value: -1000
+    max_value: 1000
+    step: 0.001
+    initial_value: -1000     # -1000 = no focus Z (the plugin's NO_FOCUS): shows "F --"
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: ip_address
+      id: ip_addr
+
+i2c:
+  sda: GPIO5
+  scl: GPIO6
+  frequency: 400kHz
+
+font:
+  - file: "pixelmix.ttf"
+    id: f_small
+    size: 8
+  - file: "DejaVuSans.ttf"
+    id: f_big
+    size: 13
+  - file: "DejaVuSans.ttf"
+    id: f_flash
+    size: 15
+    glyphs: "TOUCH"
+
+# 72x40. Screens, in priority order:
+#   splash   first 5 s after boot: expanding crosshair, then the name and IP address
+#   saver    after 5 min with nothing changing: a small laser dot wanders (OLED burn-in)
+#   TOUCH    1 s inverted flash on every trigger, with the trigger number
+#   probing  chevrons sliding down, last Z and trigger count (also homing / calibrate)
+#   result   big trigger Z; bottom line: focus Z for 4 s, then change + trend graph for 2 s
+# Top bar: plugin state, a probe icon (pin up / down / sparks on trigger) and Wi-Fi bars.
+# ALARM (blinking inverted bar) when the output stays HIGH for 1.5 s with no trigger latched.
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 72x40"
+    address: 0x3C
+    offset_x: ${oled_offset_x}
+    offset_y: ${oled_offset_y}
+    rotation: ${oled_rotation}
+    update_interval: 100ms
+    lambda: |-
+      const uint32_t now = millis();
+      const bool latched = laserprobe::is_latched();
+      const bool raw = laserprobe::level();
+      const uint32_t count = laserprobe::count();
+      const bool dep = id(deployed);
+      std::string state = id(job_state).current_option();
+      const float z = id(result_z).state;
+      const float focus = id(result_focus).state;
+
+      // ---- state kept between redraws
+      static bool was_latched = false;
+      static uint32_t flash_until = 0, high_since = 0, last_activity = 0, last_count = 0;
+      static std::string last_state;
+      static float last_z = 0, last_focus = 0;
+      static bool last_dep = false;
+      if (latched && !was_latched) flash_until = now + 1000;
+      if (raw && !latched) { if (high_since == 0) high_since = now; } else { high_since = 0; }
+      const bool alarm = high_since != 0 && now - high_since > 1500;
+      if (last_activity == 0 || count != last_count || state != last_state || z != last_z ||
+          focus != last_focus || dep != last_dep || latched != was_latched || alarm ||
+          now < id(toast_until)) {
+        last_activity = now;
+      }
+      was_latched = latched; last_count = count; last_state = state;
+      last_z = z; last_focus = focus; last_dep = dep;
+
+      // ---- splash
+      if (now < 5000) {
+        if (now < 2500) {
+          const int r = 2 + (now / 50) % 16;
+          it.circle(36, 15, r);
+          it.line(36, 15 - r - 3, 36, 15 + r + 3);
+          it.line(36 - r - 3, 15, 36 + r + 3, 15);
+          it.filled_circle(36, 15, 1);
+        } else {
+          it.print(36, 4, id(f_small), TextAlign::TOP_CENTER, "laserprobe");
+          const std::string ip = id(ip_addr).state;
+          it.print(36, 18, id(f_small), TextAlign::TOP_CENTER,
+                   (network::is_connected() && !ip.empty()) ? ip.c_str() : "wifi...");
+        }
+        it.line(0, 39, (int) (72 * now / 5000), 39);   // progress
+        return;
+      }
+
+      // ---- burn-in saver
+      if (now - last_activity > 300000) {
+        const float t = now / 1000.0f;
+        const int x = 36 + (int) (31.0f * sinf(t * 0.21f));
+        const int y = 20 + (int) (16.0f * sinf(t * 0.29f + 1.0f));
+        it.line(x - 2, y, x + 2, y);
+        it.line(x, y - 2, x, y + 2);
+        return;
+      }
+
+      // ---- trigger flash
+      if (now < flash_until) {
+        it.fill(COLOR_ON);
+        it.print(36, 4, id(f_flash), COLOR_OFF, TextAlign::TOP_CENTER, "TOUCH");
+        it.printf(36, 26, id(f_small), COLOR_OFF, TextAlign::TOP_CENTER, "#%u", (unsigned) count);
+        return;
+      }
+
+      // ---- BOOT button confirmation
+      if (now < id(toast_until)) {
+        it.rectangle(0, 0, 72, 40);
+        it.print(36, 13, id(f_big), TextAlign::TOP_CENTER, id(toast_text).c_str());
+        return;
+      }
+
+      // ---- top bar
+      if (alarm) {
+        if ((now / 400) % 2 == 0) {
+          it.filled_rectangle(0, 0, 72, 8);
+          it.print(36, 0, id(f_small), COLOR_OFF, TextAlign::TOP_CENTER, "ALARM");
+        }
+      } else {
+        it.print(0, 0, id(f_small), state.c_str());
+        // probe icon: body, then the pin (bobbing while deployed, sparks when triggered)
+        it.filled_rectangle(56, 0, 5, 4);
+        const int pin = (dep && !latched) ? 2 + (now / 300) % 2 : 0;
+        it.line(58, 4, 58, 4 + pin);
+        if (latched) {
+          it.draw_pixel_at(55, 6); it.draw_pixel_at(61, 6);
+          it.draw_pixel_at(54, 7); it.draw_pixel_at(62, 7);
+        }
+      }
+      // Wi-Fi bars (always shown, also during an alarm)
+      if (!network::is_connected()) {
+        it.line(65, 1, 70, 6);
+        it.line(65, 6, 70, 1);
+      } else {
+        const float dbm = id(rssi).state;
+        const int bars = std::isnan(dbm) ? 0 : dbm > -55 ? 4 : dbm > -65 ? 3 : dbm > -75 ? 2 : dbm > -85 ? 1 : 0;
+        for (int i = 0; i < 4; i++) {
+          const int x = 64 + i * 2;
+          const int h = (i < 3) ? 2 + 2 * i : 7;
+          if (i < bars) it.line(x, 8 - h, x, 7); else it.draw_pixel_at(x, 7);
+        }
+      }
+
+      // ---- probing: chevrons sliding down
+      if (state == "probing" || state == "calibrate" || state == "homing") {
+        const int off = (now / 90) % 7;
+        for (int k = 0; k < 3; k++) {
+          const int y = 9 + off + k * 7;
+          if (y > 25) continue;
+          it.line(29, y, 36, y + 4);
+          it.line(36, y + 4, 43, y);
+        }
+        it.printf(0, 31, id(f_small), "%.3f", z);
+        it.printf(72, 31, id(f_small), TextAlign::TOP_RIGHT, "#%u", (unsigned) count);
+        return;
+      }
+
+      // ---- result
+      it.printf(0, 10, id(f_big), "%.3f", z);
+      const int n = laserprobe::hist_n;
+      const bool trend = n >= 2 && (now / 1000) % 6 >= 4;
+      if (!trend) {
+        if (focus <= -999.0f) it.print(0, 31, id(f_small), "F --");
+        else it.printf(0, 31, id(f_small), "F %.3f", focus);
+      } else {
+        // change from the previous result, with a drawn delta sign
+        const float d = laserprobe::hist_at(n - 1) - laserprobe::hist_at(n - 2);
+        it.line(0, 38, 2, 32); it.line(2, 32, 4, 38); it.line(0, 38, 4, 38);
+        it.printf(6, 31, id(f_small), "%+.3f", d);
+        // trend graph of the last results, right aligned, 1 px per result, 8 px tall
+        float lo = 1e9f, hi = -1e9f;
+        for (int i = 0; i < n; i++) { const float v = laserprobe::hist_at(i); lo = std::min(lo, v); hi = std::max(hi, v); }
+        if (hi - lo < 0.02f) { const float m = (hi + lo) / 2; lo = m - 0.01f; hi = m + 0.01f; }
+        int px = -1, py = -1;
+        for (int i = 0; i < n; i++) {
+          const int x = 72 - n + i;
+          const int y = 39 - (int) lroundf((laserprobe::hist_at(i) - lo) / (hi - lo) * 7.0f);
+          if (px >= 0) it.line(px, py, x, y); else it.draw_pixel_at(x, y);
+          px = x; py = y;
+        }
+      }

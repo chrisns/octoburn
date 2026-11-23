@@ -1,0 +1,526 @@
+<form class="form-horizontal">
+  <div class="alert">
+    Every value here ends up in a move or decides when the head stops going down. The plugin
+    checks each value when you save and again before each job. It never sends laser, fan or
+    heater commands.
+  </div>
+
+  <h4>Probe device</h4>
+  <div class="control-group">
+    <label class="control-label">ESP base URL</label>
+    <div class="controls">
+      <input type="text" class="input-xlarge" data-bind="value: settings.plugins.laserheightprobe.esp_url">
+      <span class="help-block">The ESPHome probe controller. Its REST API must be reachable from the OctoPrint host.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">HTTP timeout, s</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.http_timeout">
+      <span class="help-block">For each request. A failed read of the probe latch is tried once more, then stops the job. Display updates never stop a job.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Arm wait, s</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.arm_wait_s">
+      <span class="help-block">Wait after deploying the pin before the latch is cleared and checked. The deploy pulse lasts 0.68 s, so 0.7 s is the least.</span>
+    </div>
+  </div>
+
+  <h4>Heights</h4>
+  <div class="control-group">
+    <label class="control-label">Safe Z, mm</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.safe_z">
+      <span class="help-block">No default: capture it on the tab (jog, then Use current Z). Travel happens at this height or higher: a head above it travels where it is. It must clear the tallest part of the object with the pin deployed.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Z floor, mm</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.z_floor">
+      <span class="help-block">No default: deploy the pin, jog its tip to just above the bed or fixture, and capture it on the tab. No probing step goes below this. At least 0: soft endstops clamp Z at 0 without telling anyone.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Max descent, mm</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.max_descent">
+      <span class="help-block">An extra bound: no probing step goes further than this below safe Z.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Probe here window, mm</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.here_max_descent">
+      <span class="help-block">Probe here lowers the head at most this far below where you left it (and never below the Z floor, if one is set). Jog to a few mm above the spot first.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Probe square default</label>
+    <div class="controls">
+      <input type="number" step="0.5" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.here_square_size"> mm,
+      <input type="number" step="1" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.here_square_n"> points per side
+      <span class="help-block">The square Probe here starts with (0.5 to 50 mm, 2 to 9 points per side). It reports the highest point.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Height map tolerance</label>
+    <div class="controls">
+      <input type="number" step="0.05" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.map_tolerance"> mm
+      <span class="help-block">The plugin warns when the printer's 28 mm mesh misses a probed height by more than this (0.02 to 5 mm). Use roughly how far your laser can be out of focus before the burn changes.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Laser focus gap</label>
+    <div class="controls">
+      <input type="number" step="0.5" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.map_focus_gap"> mm
+      <span class="help-block">The distance from the lowest part of the laser module to its focus. With it, the plugin warns when an object's height range is so big that a lost height map would put the head into the tallest part. Leave empty if unknown.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Stages</label>
+    <div class="controls">
+      <input type="text" class="input-xlarge" data-bind="value: settings.plugins.laserheightprobe.stages">
+      <span class="help-block">&quot;step, start_above&quot; for each stage, coarse first, separated by ;. The first stage starts at safe Z. Each later stage starts start_above over the last trigger, and start_above must be more than its own step.</span>
+    </div>
+  </div>
+
+  <h4>Samples</h4>
+  <div class="control-group">
+    <label class="control-label">Samples</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.samples">
+      <span class="help-block">Fine measurements that must agree for each point, the first included.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Tolerance, mm</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.tolerance">
+      <span class="help-block">How closely they must agree.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Max samples</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.max_samples">
+      <span class="help-block">If they do not agree, take more, up to this many. Then the point fails.</span>
+    </div>
+  </div>
+
+  <h4>Speeds</h4>
+  <div class="control-group">
+    <label class="control-label">Probe feed, mm/min</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.probe_feed">
+      <span class="help-block">Each probing step (G1).</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Z travel feed, mm/min</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.z_feed">
+      <span class="help-block">Rises and the moves between stages (G0).</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">XY travel feed, mm/min</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.xy_feed">
+      <span class="help-block">Travel at safe Z (G0).</span>
+    </div>
+  </div>
+
+  <h4>Job</h4>
+  <div class="control-group">
+    <div class="controls">
+      <label class="checkbox">
+        <input type="checkbox" data-bind="checked: settings.plugins.laserheightprobe.home_first">
+        Home (G28) before each job
+      </label>
+      <span class="help-block">G28 homes Z upwards on this machine. After homing, the first point probes its way down from the top, which takes a while.</span>
+      <span class="help-block">Off only if the machine is already homed and nothing moved it by hand.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <div class="controls">
+      <label class="checkbox">
+        <input type="checkbox" data-bind="checked: settings.plugins.laserheightprobe.tap_test">
+        Tap test before every automatic job and calibration
+      </label>
+      <span class="help-block">Probe here always needs one tap test per session (and again after the probe board restarts), whatever this says.</span>
+      <div class="alert alert-error">
+        <strong>Leave this on.</strong> The tap test is the only check that a touch really
+        reaches the ESP today. If the signal path is dead, the probe trips on the object and
+        nobody hears it: the head keeps stepping down until the Z floor. The probe's own wiring
+        test cannot stand in for it, because some clones have no touch mode.
+      </div>
+    </div>
+  </div>
+
+  <h4>Laser modules</h4>
+  <div class="control-group">
+    <label class="control-label">Modules</label>
+    <div class="controls">
+      <textarea rows="4" class="input-xlarge" data-bind="value: settings.plugins.laserheightprobe.laser_modules"></textarea>
+      <span class="help-block">
+        One per line: <code>name = focus offset, dx, dy</code> in mm, any field blank until
+        measured (<code>10W = , 0, 0</code>, <code>2W IR =</code>). Focus Z = trigger Z + focus
+        offset. dx, dy is the probe pin's position minus that module's beam: the head goes to
+        (X - dx, Y - dy). The pin is built on the 10W's axis, so 10W is 0, 0; the IR beam sits
+        elsewhere and stays blank (a warning) until measured. The tab fills these in.
+      </span>
+    </div>
+  </div>
+  <div class="control-group">
+    <div class="controls">
+      <label class="checkbox">
+        <input type="checkbox" data-bind="checked: settings.plugins.laserheightprobe.lightburn_invert">
+        Flip the sign of the LightBurn Z offset column
+      </label>
+      <span class="help-block">
+        Off: positive means the point is higher than the datum, so the head must go up.
+        LightBurn's docs say a positive cut-setting Z Offset moves the head towards the
+        material, and its Reverse Z device setting swaps that. Check the direction once with
+        the beam off.
+      </span>
+    </div>
+  </div>
+
+  <h4>LightBurn bridge</h4>
+  <div class="control-group">
+    <label class="control-label">Enabled</label>
+    <div class="controls">
+      <label class="checkbox"><input type="checkbox" data-bind="checked: settings.plugins.laserheightprobe.bridge_enabled"> Answer as a GRBL laser for LightBurn</label>
+      <span class="help-block">Turning it on or off, or changing the port, takes effect after an OctoPrint restart.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">TCP port</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.bridge_port">
+      <span class="help-block">LightBurn's GRBL Ethernet/TCP device points at this port on this computer.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Allowed addresses</label>
+    <div class="controls">
+      <input type="text" class="input-xlarge" data-bind="value: settings.plugins.laserheightprobe.bridge_allow">
+      <span class="help-block">IPv4 addresses, comma separated, that may connect. GRBL has no login, so this list (and a firewall rule on this computer) is the access control. See the README, Access and authentication.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Beam offset, mm</label>
+    <div class="controls">
+      <div class="input-prepend input-append"><span class="add-on">X</span><input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.bridge_offset_x"><span class="add-on">Y</span><input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.bridge_offset_y"><span class="add-on">mm</span></div>
+      <span class="help-block">Added to LightBurn's X and Y for flat jobs (with the module's own offset), so LightBurn's 0,0 is where the beam lands.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">X backlash, mm</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.bridge_backlash_x">
+      <span class="help-block">How far short the head stops when it arrives moving +X; flat jobs add it back. Measured 0.52 mm with split-line burns on 22 Nov 2026. 0 turns the correction off.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Arm time, minutes</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.bridge_arm_minutes">
+      <span class="help-block">Arm the laser for this long at most; it disarms itself after, or when the door opens.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Segment length, mm</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.bridge_seg_mm">
+      <span class="help-block">Long moves are split this short so a stop or a door opening takes effect quickly.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Pointer power</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.pointer_s_max"> of 255, off after <input type="number" step="1" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.pointer_minutes"> min
+      <span class="help-block">The 10W's beam as a pointer for LightBurn's Fire button and framing: capped this low, and switched off by itself.</span>
+    </div>
+  </div>
+
+  <h4>Air purifier</h4>
+  <div class="control-group">
+    <div class="controls">
+      <label class="checkbox"><input type="checkbox" data-bind="checked: settings.plugins.laserheightprobe.purifier_enabled">
+        Run the purifier for laser jobs</label>
+      <label class="checkbox"><input type="checkbox" data-bind="checked: settings.plugins.laserheightprobe.purifier_enclosure_fan">
+        Run the enclosure fan at full speed with it (it blows into the purifier's hose and uses no filter)</label>
+      <span class="help-block">It counts the laser energy each job commands (time x power x the module's watts) and
+        starts the purifier once a job passes the start energy, or at once if the air sensor sees heavy smoke. After
+        the last burn it runs until the air is bearable again (not clean), within the run-on limits. Paper marks
+        (about 10 J) never start it.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Home Assistant</label>
+    <div class="controls">
+      <input type="text" class="input-xlarge" autocomplete="off" data-bind="value: settings.plugins.laserheightprobe.purifier_ha_url">
+      <span class="help-block">Where the purifier's socket and the air sensor live, for example <code>http://homeassistant.local:8123</code>.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Home Assistant token</label>
+    <div class="controls">
+      <input type="password" class="input-xlarge" autocomplete="off" data-bind="value: settings.plugins.laserheightprobe.purifier_ha_token">
+      <span class="help-block">A long-lived access token (your Home Assistant profile, Security). Empty: no socket and no air readings; the fan alone runs on a timer from the job's energy, and only if the socket is already on.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Socket switch</label>
+    <div class="controls">
+      <input type="text" class="input-xlarge" autocomplete="off" data-bind="value: settings.plugins.laserheightprobe.purifier_switch">
+      <span class="help-block">The switch that powers the purifier, for example <code>switch.laser_purifier</code>.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">PM2.5 sensor</label>
+    <div class="controls">
+      <input type="text" class="input-xlarge" autocomplete="off" data-bind="value: settings.plugins.laserheightprobe.purifier_pm25">
+      <span class="help-block">Inside the enclosure, for example <code>sensor.pm_2_5mm</code> (Printmonitor2).</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Formaldehyde sensor</label>
+    <div class="controls">
+      <input type="text" class="input-xlarge" autocomplete="off" data-bind="value: settings.plugins.laserheightprobe.purifier_hcho">
+      <span class="help-block">Optional, for example <code>sensor.formaldehyde</code>.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Start energy</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.purifier_start_j">
+        <span class="add-on">J</span>
+      </div>
+      <span class="help-block">Laser energy in a job before the purifier starts. 300 J is 10 W at full power for 30 s, or about 100 s at 30 %.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Smoke alarm</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.purifier_alarm_pm25">
+        <span class="add-on">&micro;g/m&sup3;</span>
+      </div>
+      <span class="help-block">PM2.5 over the air before the job that starts it whatever the energy.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Bearable PM2.5</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.purifier_pm25_margin">
+        <span class="add-on">&micro;g/m&sup3;</span>
+      </div>
+      <span class="help-block">Over the air before the job: the run-on stops once two readings in a row are under this (and under the formaldehyde margin).</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Bearable formaldehyde</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.purifier_hcho_margin">
+        <span class="add-on">&micro;g/m&sup3;</span>
+      </div>
+      <span class="help-block">Over the air before the job.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Run-on at least</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.purifier_runon_min_s">
+        <span class="add-on">s</span>
+      </div>
+      <span class="help-block">After the last burn.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Run-on at most</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.purifier_runon_max_s">
+        <span class="add-on">s</span>
+      </div>
+      <span class="help-block">After the last burn, whatever the sensor says: the filter is precious.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Smoke decay time</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.purifier_tau_s">
+        <span class="add-on">s</span>
+      </div>
+      <span class="help-block">Learnt from each run-on (how fast the smoke falls with the purifier on). Used for the timer when the sensor is quiet. Leave empty to learn it again.</span>
+    </div>
+  </div>
+
+  <h4>Head camera and close-ups (10W)</h4>
+  <div class="control-group">
+    <label class="control-label">Overview photo from</label>
+    <div class="controls">
+      <div class="input-prepend input-append"><span class="add-on">X</span><input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.headcam_x"><span class="add-on">Y</span><input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.headcam_y"><span class="add-on">Z</span><input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.headcam_z"><span class="add-on">mm</span></div>
+      <span class="help-block">Where the head takes the whole-bed photo the close-up box is drawn on. Z 200 or higher (it moves up first).</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Photo quality</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.headcam_quality">
+      <span class="help-block">The touchscreen's photoQuality: 8 takes about 4 s a photo and is as sharp for the close-up as 1 (12 s).</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Photo time, s</label>
+    <div class="controls">
+      <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.closeup_capture_s">
+      <span class="help-block">How long one photo takes, for the time estimates.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Most tiles</label>
+    <div class="controls">
+      <input type="number" step="1" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.closeup_max_tiles">
+      <span class="help-block">A close-up needing more photos than this is refused: draw a smaller box or stand further off.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Touchscreen address</label>
+    <div class="controls">
+      <input type="text" class="input-xlarge" data-bind="value: settings.plugins.laserheightprobe.headcam_url">
+      <span class="help-block">The Snapmaker touchscreen's HTTP server, for example
+        <code>http://192.168.1.60:8080</code>. The 10W's camera reaches only the touchscreen. Empty: off.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Stand-off</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.closeup_standoff">
+        <span class="add-on">mm</span>
+      </div>
+      <span class="help-block">How high the head goes above the object's top for a close-up. The camera is sharp from about 40 to 60 mm (Z45 is the lowest calibrated).</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Close-up resolution</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.closeup_dpm">
+        <span class="add-on">px/mm</span>
+      </div>
+      <span class="help-block">Of the image LightBurn gets (the close-up camera). 15 matches the camera at Z50; LightBurn took up to 20.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Tile overlap</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.closeup_overlap">
+        <span class="add-on"></span>
+      </div>
+      <span class="help-block">Fraction (0.1 to 0.5) neighbouring photos share.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Head shadow band</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.closeup_shadow_frac">
+        <span class="add-on"></span>
+      </div>
+      <span class="help-block">The least share of each photo's right side treated as the head's shadow when photos are blended (0.4 = 40 %); each photo's own shadow widens it. The tile plan uses the shadow measured on this machine at night in room light (2026-11-21): in daylight or under other lamps it may differ.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Hood clearance</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.closeup_min_clearance">
+        <span class="add-on">mm</span>
+      </div>
+      <span class="help-block">The least gap allowed between the 10W's hood and the tallest thing under the module.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Module margin</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.closeup_hood_radius">
+        <span class="add-on">mm</span>
+      </div>
+      <span class="help-block">Added all round the 10W's outline (from Snapmaker's CAD: 74 mm to the camera side of the beam, 40 to the other, 37 front and back) for the dashed area on the tab.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Approach</label>
+    <div class="controls">
+      <div class="input-append">
+        <input type="number" step="any" class="input-small" data-bind="value: settings.plugins.laserheightprobe.closeup_approach_mm">
+        <span class="add-on">mm</span>
+      </div>
+      <span class="help-block">Every photo position is reached from -X, -Y by this much (the X axis has about 0.4 mm of backlash).</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <div class="controls">
+      <label class="checkbox">
+        <input type="checkbox" data-bind="checked: settings.plugins.laserheightprobe.closeup_fresh_overview">
+        Take a fresh overview at the start of every close-up
+      </label>
+      <span class="help-block">So the close-up is built on the bed as it is now. About 20 s longer.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <div class="controls">
+      <label class="checkbox">
+        <input type="checkbox" data-bind="checked: settings.plugins.laserheightprobe.burn_closeup_after">
+        Take a close-up of the burned area after each LightBurn burn
+      </label>
+      <span class="help-block">Once a flat burn has finished and the bridge has been idle for 10 s, the 10W photographs the burned area (plus 5 mm round it) and keeps it in Recent burns on the Burn tab. It disarms the laser, as any close-up does.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Close-up base</label>
+    <div class="controls">
+      <select class="input-xlarge" data-bind="value: settings.plugins.laserheightprobe.closeup_base">
+        <option value="headcam">10W head camera overview (from X232 Y178 Z290)</option>
+        <option value="usb">Fixed USB bed camera</option>
+      </select>
+      <span class="help-block">The whole-bed picture the sharp close-up tiles are blended over. The tiles always come from the 10W. The USB bed camera needs its own calibration first (the <code>bedcam_calibrate</code> command, see the README).</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Bed camera snapshot</label>
+    <div class="controls">
+      <input type="text" class="input-xxlarge" data-bind="value: settings.plugins.laserheightprobe.bedcam_url">
+      <span class="help-block">A JPEG snapshot URL, for example go2rtc's <code>http://octopi.local:1984/api/frame.jpeg?src=bed_cam</code>.</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label class="control-label">Bed camera park</label>
+    <div class="controls">
+      <div class="input-prepend input-append">
+        <span class="add-on">X</span>
+        <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.bedcam_park_x">
+        <span class="add-on">Y</span>
+        <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.bedcam_park_y">
+        <span class="add-on">Z</span>
+        <input type="number" step="any" class="input-mini" data-bind="value: settings.plugins.laserheightprobe.bedcam_park_z">
+        <span class="add-on">mm</span>
+      </div>
+      <span class="help-block">Where the head waits for the bed camera's photo: out of its view, with the bed at the Y the camera was calibrated at (the bed moves in Y under it). Y must match the calibration. Z 200 or higher. Refused with the rotary fitted.</span>
+    </div>
+  </div>
+</form>

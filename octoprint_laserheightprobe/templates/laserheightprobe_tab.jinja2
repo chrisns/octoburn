@@ -1,0 +1,696 @@
+<div id="laserheightprobe_tab" class="laserheightprobe lhp">
+
+  <div class="lhp-brand">
+    <img src="plugin/laserheightprobe/static/img/octoburn-128.png" alt="OctoBurn">
+    <div>
+      <div class="lhp-brand-name">OctoBurn</div>
+      <div class="lhp-brand-tag">Laser burns that land where you drew them: focus, surfaces, rotary, camera and LightBurn.</div>
+    </div>
+  </div>
+
+  <!-- the status strip: what is fitted and what can fire, on every pane -->
+  <div class="lhp-head">
+    <div class="lhp-chips" data-bind="foreach: uiChips">
+      <span data-bind="css: $parent.uiChipCss(level), attr: {title: title || ''}">
+        <i data-bind="css: icon"></i>
+        <span class="lhp-chip-label" data-bind="text: label"></span>
+        <span class="lhp-chip-value" data-bind="text: value"></span>
+      </span>
+    </div>
+    <button class="btn btn-mini lhp-detect" data-bind="click: detect, enable: canProbe() && !running() && printerReady()"
+            title="Ask the printer what is fitted (M1006, M114, the laser's safety state)"><i class="fas fa-sync-alt"></i> Detect</button>
+  </div>
+
+  <!-- the safety bar: armed, running, waiting for a tap, failed -->
+  <div class="lhp-bar lhp-bar-armed" data-bind="visible: uiArmed">
+    <i class="fas fa-exclamation-triangle"></i>
+    <strong data-bind="text: uiArmedText"></strong>
+    <span class="lhp-bar-note">LightBurn's burns fire.</span>
+    <button class="btn btn-danger" data-bind="click: uiDisarm"><i class="fas fa-power-off"></i> Disarm</button>
+  </div>
+  <div class="lhp-bar lhp-bar-run" data-bind="visible: running() && !waitingForTap()">
+    <i class="fas fa-cog fa-spin"></i>
+    <strong data-bind="text: uiRunTitle"></strong>
+    <span class="lhp-bar-note" data-bind="text: message"></span>
+    <div class="progress lhp-progress" data-bind="visible: total() > 0">
+      <div class="bar" data-bind="style: {width: percent() + '%'}"></div>
+    </div>
+    <button class="btn btn-danger" data-bind="click: abort"><i class="fas fa-stop"></i> Stop</button>
+  </div>
+  <div class="lhp-bar lhp-bar-tap" data-bind="visible: waitingForTap">
+    <i class="fas fa-hand-point-up"></i>
+    <strong>Tap the probe pin with a finger now.</strong>
+    <span class="lhp-bar-note">Push the deployed pin up gently. The job starts when the probe feels it, and gives up after 60 s.</span>
+    <button class="btn btn-danger" data-bind="click: abort"><i class="fas fa-stop"></i> Stop</button>
+  </div>
+  <div class="alert alert-error lhp-alert" data-bind="visible: error">
+    <i class="fas fa-times-circle"></i> <span data-bind="text: error"></span>
+  </div>
+  <div class="alert alert-error lhp-alert" data-bind="visible: settingsError">
+    <i class="fas fa-cog"></i> <strong>The settings are not safe to use:</strong> <span data-bind="text: settingsError"></span>
+  </div>
+
+  <!-- a 3D print head is back on, or the laser needs ThermalRunaway off -->
+  <!-- ko ifnot: isLaser -->
+  <div class="lhp-card lhp-card-center" data-bind="visible: headSwapReady">
+    <i class="fas fa-cube lhp-big-icon"></i>
+    <h4>No laser fitted</h4>
+    <p class="muted">The printer reports <span data-bind="text: detectedText"></span>. Heating and 3D prints are allowed, so the laser tools are hidden.</p>
+  </div>
+  <div class="alert alert-error lhp-alert" data-bind="visible: !headSwapReady()">
+    <h4><i class="fas fa-ban"></i> Not ready to 3D print</h4>
+    <p data-bind="text: headSwapText"></p>
+    <button class="btn btn-primary" data-bind="click: readyToPrint, enable: canProbe() && printerReady()">Get ready to 3D print</button>
+  </div>
+  <!-- /ko -->
+  <!-- ko if: isLaser -->
+  <div class="alert lhp-alert" data-bind="visible: headSwapInfo().thermal === 'enabled'">
+    <i class="fas fa-thermometer-half"></i>
+    ThermalRunaway is on. With the laser fitted the bed reads about -14 C, and it would stop the printer.
+    <button class="btn btn-small" data-bind="click: readyForLaser, enable: canProbe() && printerReady()">Set up for the laser</button>
+  </div>
+  <!-- /ko -->
+  <div class="alert alert-info lhp-alert" data-bind="visible: headSwapInfo().restart">
+    <i class="fas fa-redo"></i> Restart OctoPrint (System menu, Restart OctoPrint) to apply the ThermalRunaway change.
+  </div>
+  <p class="lhp-msg" data-bind="text: headSwapMessage, visible: headSwapMessage"></p>
+
+  <div class="alert lhp-alert" data-bind="visible: isLaser() && detectedWarning() && uiProbeOnline() && !uiArmed()">
+    <i class="fas fa-exclamation-triangle"></i>
+    <strong>The probe is connected.</strong> Never fire with the probe in the bay: park the laser beam-down on something that
+    cannot burn. The laser refuses to fire unless it is seated on the head.
+  </div>
+  <!-- ko if: isLaser -->
+  <ul class="nav nav-pills lhp-nav" data-bind="foreach: uiTabs">
+    <li data-bind="css: {active: $parent.uiActive() === id}">
+      <a href="#" data-bind="click: function () { $parent.uiSelect(id); }"><i data-bind="css: icon"></i> <span data-bind="text: label"></span></a>
+    </li>
+  </ul>
+  <!-- /ko -->
+
+  <!-- ===================================================================== BURN -->
+  <div class="lhp-pane" data-bind="visible: uiShow('burn')">
+
+    <div class="lhp-card lhp-ready" data-bind="visible: uiReady().length, css: {'lhp-card-ok': uiReadyBad() === 0, 'lhp-card-danger': uiReadyBad() > 0}">
+      <h5><i class="fas fa-clipboard-check"></i> Ready to burn <span class="lhp-ready-sum" data-bind="text: uiReadySummary"></span></h5>
+      <ul class="lhp-checks" data-bind="foreach: uiReady">
+        <li data-bind="css: 'lhp-check-' + level">
+          <i data-bind="css: $parent.uiCheckIcon(level)"></i>
+          <span data-bind="text: text"></span>
+          <button class="btn btn-mini" data-bind="visible: fix && $parent.uiFixLabel(fix), click: function () { $parent.uiFix(fix); }, text: $parent.uiFixLabel(fix)"></button>
+        </li>
+      </ul>
+    </div>
+
+    <div class="lhp-card">
+      <h5><i class="fas fa-link"></i> LightBurn</h5>
+      <p class="lhp-lead" data-bind="text: bridgeText"></p>
+      <p class="muted lhp-small" data-bind="visible: bridge().enabled">
+        LightBurn connects as a GRBL laser over TCP (port 2323). Pick a mode here, then frame and start from LightBurn.
+      </p>
+    </div>
+
+    <!-- flat bed -->
+    <!-- ko ifnot: rotaryOn -->
+    <div class="lhp-card" data-bind="visible: bridge().enabled">
+      <h5><span class="lhp-step">1</span> Focus</h5>
+      <label class="radio lhp-choice">
+        <input type="radio" name="lhp_focus" value="bed" data-bind="checked: uiFocusMode">
+        On the bed, or on material
+        <input type="number" step="0.1" min="0" class="input-mini" data-bind="value: uiFocusHeight, enable: uiFocusMode() === 'bed'"> mm thick
+      </label>
+      <label class="radio lhp-choice">
+        <input type="radio" name="lhp_focus" value="here" data-bind="checked: uiFocusMode">
+        From the last Probe here <span class="muted">(Control tab panel)</span>
+      </label>
+      <label class="radio lhp-choice" data-bind="visible: uiHasCamera">
+        <input type="radio" name="lhp_focus" value="frame" data-bind="checked: uiFocusMode">
+        At the last Frame from LightBurn <span class="muted">(the red dot measures its centre)</span>
+      </label>
+      <label class="radio lhp-choice" data-bind="visible: uiHasCamera">
+        <input type="radio" name="lhp_focus" value="dot" data-bind="checked: uiFocusMode">
+        From the red dot, at the box drawn on the Camera tab
+      </label>
+      <label class="checkbox lhp-choice lhp-auto" data-bind="visible: uiHasCamera, attr: {title: 'In flat mode with the laser not armed: each Frame from LightBurn is measured with the red dot and the focus set there, before you press Start'}">
+        <input type="checkbox" data-bind="checked: uiAutoFrame, click: uiSetAutoFrame, enable: canProbe">
+        Focus automatically after each Frame
+      </label>
+      <p class="lhp-preview" data-bind="text: uiFocusPreview().text, css: {'text-error': uiFocusPreview().bad}"></p>
+
+      <h5><span class="lhp-step">2</span> Flat mode <span class="lhp-auto-note" data-bind="text: uiAutoNote"></span></h5>
+      <div class="lhp-actions">
+        <button class="btn btn-primary" data-bind="click: function () { uiFlatStart(false); }, enable: canProbe() && printerReady() && !running() && !dotBusy() && !uiFocusPreview().bad"><i class="fas fa-play"></i> <span data-bind="text: bridge().mode === 'flat' ? 'Apply this focus' : 'Flat mode'"></span></button>
+        <button class="btn" data-bind="click: function () { uiFlatStart(true); }, enable: canProbe() && printerReady() && !running() && !dotBusy() && !uiFocusPreview().bad && uiFocusMode() !== 'dot'"
+                title="The whole job runs with every burn at power 0: watch it trace"><i class="fas fa-eye"></i> Dry run</button>
+        <button class="btn" data-bind="click: function () { bridgeMode('off'); }, enable: canProbe() && bridge().mode" title="LightBurn can no longer move the head; the automatic mode waits until you pick a mode again"><i class="fas fa-stop"></i> Off</button>
+      </div>
+      <p class="lhp-describe" data-bind="visible: bridge().mode, text: bridge().describe"></p>
+      <p class="lhp-msg" data-bind="text: dotMessage, visible: dotMessage"></p>
+      <p class="muted lhp-small">
+        <i class="fas fa-shield-alt"></i> <span data-bind="text: obstaclesText"></span>
+        Flat burns stop before the laser module (74 mm left, 40 mm right, 37 mm front and back of the beam) would come down over one.
+      </p>
+    </div>
+    <!-- /ko -->
+
+    <!-- rotary -->
+    <!-- ko if: rotaryOn -->
+    <div class="lhp-card" data-bind="visible: bridge().enabled">
+      <h5><span class="lhp-step">1</span> The object</h5>
+      <!-- ko if: rotary -->
+      <p class="lhp-lead">
+        <span data-bind="text: rotaryDiameterText"></span>
+        <span class="text-warning" data-bind="visible: !rotary().complete"> (not complete: measure it on the Rotary tab)</span>
+      </p>
+      <p class="muted lhp-small" data-bind="visible: rotary().diameter">
+        In LightBurn's rotary setup use this diameter, and <code data-bind="text: 'dia=' + (rotary().diameter || 0).toFixed(2)"></code> in the device's start script.
+      </p>
+      <!-- /ko -->
+      <!-- ko ifnot: rotary -->
+      <p class="text-warning">No rotary measurement yet: measure the object on the Rotary tab first.</p>
+      <!-- /ko -->
+      <h5><span class="lhp-step">2</span> Rotary mode <span class="lhp-auto-note" data-bind="text: uiAutoNote"></span></h5>
+      <div class="lhp-actions">
+        <button class="btn btn-primary" data-bind="click: function () { bridgeMode('rotary'); }, enable: canProbe() && printerReady() && !running()"><i class="fas fa-play"></i> Rotary mode</button>
+        <button class="btn" data-bind="click: function () { bridgeMode('rotary', {dry_run: true}); }, enable: canProbe() && printerReady() && !running()" title="Every burn goes out at power 0"><i class="fas fa-eye"></i> Dry run</button>
+        <button class="btn" data-bind="click: function () { bridgeMode('off'); }, enable: canProbe() && bridge().mode" title="LightBurn can no longer move the head; the automatic mode waits until you pick a mode again"><i class="fas fa-stop"></i> Off</button>
+      </div>
+      <p class="lhp-describe" data-bind="visible: bridge().mode, text: bridge().describe"></p>
+    </div>
+    <!-- /ko -->
+
+    <div class="lhp-card" data-bind="visible: bridge().enabled, css: {'lhp-card-danger': uiArmed}">
+      <h5><span class="lhp-step">3</span> Laser</h5>
+      <div class="lhp-actions">
+        <!-- ko ifnot: uiArmed -->
+        <button class="btn btn-danger" data-bind="click: uiArm, enable: !uiArmBlock(), css: {'lhp-arm-pending': uiArmPending}">
+          <i class="fas fa-bolt"></i> <span data-bind="text: uiArmPending() ? 'Click again to arm' : 'Arm the laser'"></span>
+        </button>
+        <!-- /ko -->
+        <!-- ko if: uiArmed -->
+        <button class="btn btn-danger" data-bind="click: uiDisarm"><i class="fas fa-power-off"></i> Disarm</button>
+        <!-- /ko -->
+        <button class="btn" data-bind="click: function () { bridgePointer(true); }, enable: canProbe() && bridge().mode && !bridge().pointer"
+                title="LightBurn's Fire button and laser-on framing: the 10W's beam capped low, or the 2W IR's crosshair"><i class="far fa-dot-circle"></i> Pointer on</button>
+        <button class="btn" data-bind="click: function () { bridgePointer(false); }, enable: canProbe() && bridge().pointer"><i class="far fa-circle"></i> Pointer off</button>
+      </div>
+      <p class="lhp-preview text-warning" data-bind="visible: !uiArmed() && uiArmBlock(), text: uiArmBlock"></p>
+      <p class="muted lhp-small" data-bind="visible: !uiArmed() && !uiArmBlock()">Armed for 30 minutes at most. Opening the door disarms it.</p>
+      <p class="lhp-msg text-error" data-bind="text: laserMessage, visible: laserMessage"></p>
+    </div>
+
+    <div class="lhp-card">
+      <h5><i class="fas fa-wind"></i> Air purifier</h5>
+      <p data-bind="text: purifierText"></p>
+      <div class="lhp-actions">
+        <button class="btn btn-small" data-bind="click: purifierStop, enable: purifierInfo().power || (purifierInfo().phase && purifierInfo().phase !== 'idle')"><i class="fas fa-stop"></i> Stop the purifier</button>
+        <button class="btn btn-small" data-bind="click: purifierTest, enable: canProbe() && printerReady() && purifierInfo().phase === 'idle'" title="Socket on, gear 1 for 5 s, then off: checks the wiring">Test (5 s)</button>
+      </div>
+      <p class="lhp-msg" data-bind="text: purifierMessage, visible: purifierMessage"></p>
+    </div>
+
+    <div class="lhp-card">
+      <h5><i class="fas fa-history"></i> Recent burns</h5>
+      <p class="muted lhp-small" data-bind="visible: !burnRows().length">No burns yet.</p>
+      <div class="lhp-burns" data-bind="foreach: burnRows">
+        <div class="lhp-burn" data-bind="attr: {title: title}">
+          <!-- ko if: src -->
+          <a target="_blank" rel="noopener" data-bind="attr: {href: src}" title="Open the close-up of this burn">
+            <img class="lhp-burn-thumb" alt="Close-up of the burn" data-bind="attr: {src: src}">
+          </a>
+          <!-- /ko -->
+          <!-- ko ifnot: src -->
+          <div class="lhp-burn-thumb lhp-burn-none" data-bind="attr: {title: rotary ? 'Rotary burns have no close-up photo' : 'No close-up photo'}"><i data-bind="css: rotary ? 'fas fa-sync-alt' : 'far fa-image'"></i></div>
+          <!-- /ko -->
+          <div class="lhp-small">
+            <strong data-bind="text: when"></strong> <span data-bind="text: detail"></span><br>
+            <span data-bind="text: status, css: {'text-warning': failed}"></span>
+          </div>
+        </div>
+      </div>
+      <div class="lhp-actions" data-bind="visible: burnRows().length">
+        <button class="btn btn-small" data-bind="click: burnClear, enable: canProbe()"><i class="fas fa-trash"></i> Clear the list</button>
+      </div>
+      <p class="muted lhp-small" data-bind="visible: !(burnHistory() || {}).enabled">The close-up after a burn is off (OctoBurn settings, Head camera and close-ups).</p>
+      <p class="lhp-msg text-error" data-bind="text: burnMessage, visible: burnMessage"></p>
+    </div>
+  </div>
+
+  <!-- ===================================================================== CAMERA -->
+  <div class="lhp-pane" data-bind="visible: uiShow('camera')">
+    <div class="lhp-card">
+      <h5><i class="fas fa-camera"></i> Close-up camera</h5>
+      <p class="muted lhp-small" data-bind="text: closeupText"></p>
+      <div class="lhp-closeup laserheightprobe-closeup">
+        <img data-bind="attr: {src: closeupSrc}" alt="">
+        <svg viewBox="0 0 320 350" preserveAspectRatio="none"
+             data-bind="event: {mousedown: closeupDragStart, mousemove: closeupDragMove, mouseup: closeupDragEnd, mouseleave: closeupDragEnd}">
+          <!-- ko if: closeupPlanData -->
+          <rect fill="none" stroke="#e33" stroke-width="0.8" stroke-dasharray="3,2"
+                data-bind="attr: closeupRectAttr(closeupPlanData().sweep_lb)"></rect>
+          <!-- ko foreach: closeupPlanData().tiles -->
+          <rect fill="none" stroke="#3a3" stroke-width="0.5" data-bind="attr: $parent.closeupRectAttr(view_lb)"></rect>
+          <!-- /ko -->
+          <!-- /ko -->
+          <!-- ko foreach: obstacles -->
+          <rect fill="rgba(220,40,40,0.18)" stroke="#d33" stroke-width="0.6"
+                data-bind="attr: $parent.closeupRectAttr(box)"></rect>
+          <!-- /ko -->
+          <!-- ko if: closeupBox -->
+          <rect fill="rgba(255,255,0,0.15)" stroke="#ff0" stroke-width="0.8"
+                data-bind="attr: closeupRectAttr([closeupBox().x0, closeupBox().y0, closeupBox().x1, closeupBox().y1])"></rect>
+          <!-- /ko -->
+        </svg>
+      </div>
+      <p class="muted lhp-small">Drag a box round the work. Yellow: your box. Dashed red: where the module will go. Red: obstacles.</p>
+      <div class="lhp-actions">
+        <button class="btn" data-bind="click: closeupOverview, enable: canProbe() && printerReady() && !running()"
+                title="The 10W's whole-bed photo from Z290: the image the box is drawn on"><i class="fas fa-image"></i> Overview</button>
+        <button class="btn btn-primary" data-bind="click: closeupStart, enable: canProbe() && printerReady() && !running() && closeupBox()"><i class="fas fa-search-plus"></i> <span data-bind="text: closeupStartText"></span></button>
+        <button class="btn" data-bind="click: closeupPlan, enable: canProbe() && printerReady() && !running() && closeupBox()" title="Show the tiles and the module's sweep, without moving">Plan</button>
+        <button class="btn" data-bind="click: closeupClear, enable: canProbe() && !running()">Clear</button>
+      </div>
+      <div class="lhp-fields">
+        <label>Height of the tallest thing under the dashed area <input type="number" step="0.1" min="0" class="input-mini" data-bind="value: closeupHeight"> mm</label>
+        <label class="muted">Stand-off <input type="number" step="1" min="35" class="input-mini" data-bind="value: closeupStandoff"> mm</label>
+      </div>
+      <p class="lhp-msg" data-bind="text: closeupMessage, visible: closeupMessage"></p>
+    </div>
+
+    <div class="lhp-card">
+      <h5><i class="fas fa-ruler-vertical"></i> Measure the box</h5>
+      <div class="lhp-actions">
+        <button class="btn" data-bind="click: dotMeasure, enable: canProbe() && printerReady() && !running() && closeupBox() && dotInfo().calibrated && !dotBusy()"
+                title="The 10W's red autofocus light, photographed from two heights: the height of the surface at the box's centre (about 1 min, laser off)"><i class="far fa-dot-circle"></i> Height from the red dot</button>
+        <button class="btn" data-bind="click: obstacleMark, enable: canProbe() && closeupBox()"
+                title="Flat burns then keep the laser module off this box, if the object is taller than the module clears (uses the height above)"><i class="fas fa-shield-alt"></i> Mark as an obstacle</button>
+        <button class="btn" data-bind="click: obstacleClear, enable: canProbe() && obstacles().length">Clear obstacles</button>
+      </div>
+      <p class="muted lhp-small" data-bind="text: dotText"></p>
+      <p class="lhp-msg" data-bind="text: dotMessage, visible: dotMessage"></p>
+      <p class="muted lhp-small" data-bind="text: obstaclesText"></p>
+    </div>
+
+    <div class="lhp-card">
+      <h5><i class="fas fa-video"></i> In LightBurn</h5>
+      <p class="lhp-small">Add a network camera with this address, or use the "10W close-up" camera already set up:</p>
+      <div class="lhp-url">
+        <code data-bind="text: closeupUrl"></code>
+        <button class="btn btn-mini" data-bind="click: uiCopyUrl"><i class="far fa-copy"></i> Copy</button>
+        <span class="muted" data-bind="text: uiCopied"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== SURFACE -->
+  <div class="lhp-pane" data-bind="visible: uiShow('surface')">
+    <div class="lhp-card">
+      <h5><i class="fas fa-mountain"></i> Height map</h5>
+      <p class="muted lhp-small">
+        A loaded map goes into the printer's own bed mesh, so every move, including LightBurn's, follows the surface.
+        The map is zero at its lowest point: that is where the focus is set.
+      </p>
+      <div class="lhp-status-line" data-bind="visible: heightMap() || meshState().loaded">
+        <span data-bind="visible: meshState().loaded"><i class="fas fa-check-circle text-success"></i> <strong>Loaded in the printer</strong>, levelling on (<span data-bind="text: meshLoadedText"></span>).</span>
+        <span data-bind="visible: !meshState().loaded"><i class="far fa-circle"></i> The printer has its print mesh.</span>
+      </div>
+      <div class="lhp-actions">
+        <button class="btn btn-primary" data-bind="click: loadMap, enable: canProbe() && heightMap() && printerReady() && !running()"><i class="fas fa-upload"></i> Load into the printer</button>
+        <button class="btn" data-bind="click: restoreMap, enable: canProbe() && meshState().loaded && printerReady() && !running()" title="Put the printer's own print mesh back (before 3D printing)">Restore print mesh</button>
+        <button class="btn" data-bind="click: mapBed, visible: heightMap() && heightMap().source === 'red dot', enable: canProbe() && printerReady() && !running() && !dotBusy()"
+                title="Put the last probed bed map back (loaded into the printer straight away if a map is loaded)"><i class="fas fa-undo"></i> Back to the bed map</button>
+      </div>
+      <div class="alert alert-error" data-bind="visible: meshState().warning, text: meshState().warning"></div>
+
+      <!-- ko with: heightMap -->
+      <table class="table table-condensed laserheightprobe-map-summary">
+        <tbody>
+          <tr><th>Made from</th><td data-bind="text: points + ' points' + (module ? ', ' + module : '') + (source === 'red dot' ? ' (red dot, an object)' : '')"></td></tr>
+          <tr><th>Lowest point (focus here)</th>
+              <td><strong data-bind="text: 'X' + base.x.toFixed(2) + ' Y' + base.y.toFixed(2)"></strong>
+                  <span data-bind="text: base.focus === null || base.focus === undefined ? ' (calibrate the focus offset to get its focus Z)' : ', focus Z ' + base.focus.toFixed(3)"></span>
+                  <div class="muted" data-bind="visible: base.machine_focus !== null && base.machine_focus !== undefined,
+                       text: 'Machine focus Z ' + (base.machine_focus || 0).toFixed(3) + ': the number for the G53 G0 Z line in LightBurn\'s start G-code (check this on the machine first).'"></div></td></tr>
+          <tr><th>Height range</th><td data-bind="text: range.toFixed(2) + ' mm, steepest ' + slope_deg + '°'"></td></tr>
+          <tr><th>Fit</th><td data-bind="text: 'worst miss ' + (worst.miss >= 0 ? '+' : '') + worst.miss.toFixed(3) + ' mm at X' + worst.x.toFixed(1) + ' Y' + worst.y.toFixed(1) + ', rms ' + rms.toFixed(3) + ' mm (tolerance ' + tolerance + ')'"></td></tr>
+        </tbody>
+      </table>
+      <!-- ko foreach: warnings -->
+      <div class="alert" data-bind="text: $data"></div>
+      <!-- /ko -->
+      <div class="lhp-mesh-wrap">
+        <table class="laserheightprobe-mesh">
+          <tbody data-bind="foreach: $parent.meshRows">
+            <tr data-bind="foreach: $data">
+              <td data-bind="text: text, style: {backgroundColor: colour}, attr: {title: title}"></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="muted lhp-small">The printer's mesh, back row at the top, in mm above the lowest point.</p>
+      </div>
+      <!-- /ko -->
+      <!-- ko ifnot: heightMap -->
+      <p class="muted">No height map yet. Make one from the red dot (below) or from a probe job (Probe tab).</p>
+      <!-- /ko -->
+    </div>
+
+    <div class="lhp-card">
+      <h5><i class="far fa-dot-circle"></i> Make a map</h5>
+      <div class="lhp-actions">
+        <button class="btn" data-bind="click: dotMap, enable: uiHasCamera() && canProbe() && printerReady() && !running() && closeupBox() && dotInfo().calibrated && !dotBusy()"
+                title="No probe swap: one red-dot reading per point over the box drawn on the Camera tab (about 12 s a point, laser off). Records the object as an obstacle, and loads straight away if a map is loaded.">With the red dot</button>
+        <label class="lhp-inline">every <input type="number" min="10" max="100" step="5" class="input-mini" data-bind="value: dotMapStep"> mm over the box on the Camera tab</label>
+      </div>
+      <div class="lhp-actions">
+        <button class="btn" data-bind="click: buildMap, enable: canProbe() && rows().length && !running()">From the probe results</button>
+        <span class="muted lhp-small">Run a grid of points on the Probe tab first.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== ROTARY -->
+  <div class="lhp-pane" data-bind="visible: uiShow('rotary')">
+    <!-- ko if: rotaryOn -->
+    <div class="lhp-card">
+      <h5><i class="fas fa-sync-alt"></i> The object in the chuck</h5>
+      <!-- ko if: rotary -->
+      <p class="lhp-lead">
+        <span data-bind="text: rotaryDiameterText"></span><span data-bind="visible: rotary().body_length, text: rotary().body_length ? ', body Y' + rotary().body_from_y + ' to Y' + rotary().body_to_y + ' (' + rotary().body_length.toFixed(1) + ' mm)' : ''"></span>
+        <span class="text-warning" data-bind="visible: !rotary().complete">, not complete</span>
+      </p>
+      <p data-bind="visible: rotaryRunoutText, css: {'text-warning': rotary().runout_within === false}, text: rotaryRunoutText"
+         title="How far the top rises and falls as the rotary turns. Rotary mode follows it in Z."></p>
+      <!-- ko foreach: uiRotaryState -->
+      <p class="lhp-small" data-bind="text: text, css: tone"></p>
+      <!-- /ko -->
+      <div class="lhp-actions">
+        <button class="btn" data-bind="click: uiRotaryHousing, enable: canProbe() && !running() && printerReady() && sessionOk() && rotary().complete !== undefined"
+                title="Two touches on the rotary's housing (about a minute, probe on). If it moved sideways, the measurement is marked stale."><i class="fas fa-question-circle"></i> Has the rotary moved?</button>
+        <button class="btn" data-bind="click: uiRotaryVerify, enable: canProbe() && !running() && printerReady() && sessionOk() && rotary().complete && !rotary().stale"
+                title="Touch the top where the measurement says it is, at 4 positions and 4 angles, and beside the crest (about 10 minutes, probe on)"><i class="fas fa-check-double"></i> Verify against the object</button>
+        <button class="btn btn-small" data-bind="click: downloadTemplate"><i class="fas fa-download"></i> LightBurn template</button>
+      </div>
+      <p class="muted lhp-small" data-bind="visible: !sessionOk()">The probe buttons need a tap test this session (Control tab panel).</p>
+      <!-- /ko -->
+      <!-- ko ifnot: rotary -->
+      <p class="muted">Not measured yet.</p>
+      <!-- /ko -->
+      <p class="lhp-msg" data-bind="text: uiRotaryCheck, visible: uiRotaryCheck"></p>
+    </div>
+
+    <div class="lhp-card">
+      <h5><span class="lhp-step">1</span> Measure with the probe</h5>
+      <p class="muted lhp-small">
+        Touches the rotary's housing, the object at four turns near each end, fits the axis and finds the body's ends.
+        Measure again starts from the last measurement (and follows the housing if the rotary moved). A new object starts
+        from a Probe here on its top. The ends below are guesses: it finds the real ones.
+      </p>
+      <p class="lhp-small" data-bind="css: {'text-warning': uiHomedHead() !== 'laser', 'text-success': uiHomedHead() === 'laser'}">
+        <i class="fas" data-bind="css: uiHomedHead() === 'laser' ? 'fa-check-circle' : 'fa-exclamation-triangle'"></i>
+        <span data-bind="text: uiHomedHeadText"></span>
+      </p>
+      <div class="lhp-fields">
+        <label>Free end about Y <input type="number" class="input-mini" data-bind="value: rotaryFrom, enable: !running()" title="A guess: where the object's free end is"></label>
+        <label>body ends near the chuck about Y <input type="number" class="input-mini" data-bind="value: rotaryTo, enable: !running()" title="A guess: where the full diameter stops before the shoulder or neck"></label>
+        <label>never past Y <input type="number" class="input-mini" placeholder="body" data-bind="value: rotaryChuckLimit, enable: !running()" title="Blank: the rotary body (the head never passes Y293.4). Objects can sit over the chuck."></label>
+        <label>known diameter <input type="number" step="any" class="input-mini" data-bind="value: rotaryKnown, enable: !running()" title="Only to calibrate the housing reference on an object you have calipered"> mm</label>
+      </div>
+      <div class="lhp-actions">
+        <button class="btn btn-primary" data-bind="click: uiRotaryRemeasure, visible: rotary() && rotary().axis_x != null, enable: canProbe() && !running() && printerReady() && sessionOk()"
+                title="Starts from the last measurement, and follows the housing if the rotary has moved: no Probe here needed"><i class="fas fa-redo"></i> Measure again</button>
+        <button class="btn" data-bind="click: measureRotary, enable: canProbe() && !running() && printerReady() && sessionOk(), css: {'btn-primary': !(rotary() && rotary().axis_x != null)}"
+                title="A new object: starts from your last Probe here on its top"><i class="fas fa-ruler-combined"></i> Measure a new object</button>
+        <button class="btn btn-small" data-bind="click: uiRotaryResume, visible: rotary() && rotary().partial, enable: canProbe() && !running() && printerReady() && sessionOk()">Resume</button>
+        <span class="muted lhp-small" data-bind="visible: !sessionOk()">Needs a tap test this session (Control tab panel).</span>
+      </div>
+    </div>
+
+    <div class="lhp-card">
+      <h5><span class="lhp-step">2</span> Check with the red dot</h5>
+      <p class="muted lhp-small">With the 10W on (the red dot is the 10W's), no probe swap: reads the top at six points from high above and compares with the measurement. Height only: it cannot see the object shifted sideways.</p>
+      <div class="lhp-actions">
+        <button class="btn" data-bind="click: uiRotaryDotCheck, enable: uiHasCamera() && canProbe() && printerReady() && !running() && !dotBusy() && dotInfo().calibrated && rotary() && rotary().complete"><i class="far fa-dot-circle"></i> Check the height</button>
+      </div>
+      <p class="lhp-msg" data-bind="text: uiRotaryCheck, visible: uiRotaryCheck"></p>
+    </div>
+
+    <div class="lhp-card">
+      <h5><i class="fas fa-redo"></i> Turn the rotary</h5>
+      <p class="muted lhp-small">The pin stows and the head goes up before the rotary turns. For levelling with a spirit level, or looking round the object.</p>
+      <div class="lhp-actions">
+        <button class="btn btn-small" data-bind="click: function () { rotaryTurn({by: -90}); }, enable: canProbe() && !running() && printerReady()">&minus;90&deg;</button>
+        <button class="btn btn-small" data-bind="click: function () { rotaryTurn({by: 90}); }, enable: canProbe() && !running() && printerReady()">+90&deg;</button>
+        <button class="btn btn-small" data-bind="click: function () { rotaryTurn({to: 0}); }, enable: canProbe() && !running() && printerReady()">Back to B0</button>
+        <span data-bind="text: rotaryTurnText"></span>
+      </div>
+    </div>
+    <!-- /ko -->
+  </div>
+
+  <!-- ===================================================================== PROBE -->
+  <div class="lhp-pane" data-bind="visible: uiShow('probe')">
+    <div class="lhp-card">
+      <h5><i class="fas fa-crosshairs"></i> Measure points</h5>
+      <p class="muted lhp-small">
+        For one spot, use the <strong>OctoBurn probe</strong> panel in the Control tab (jog the pin over it, Probe here).
+        This measures a list of points in one job.
+      </p>
+      <!-- ko ifnot: running -->
+      <label class="checkbox" data-bind="visible: canProbe">
+        <input type="checkbox" data-bind="checked: setupConfirmed">
+        The probe head is in the bay, the laser is parked beam-down on something that cannot burn, and safe Z clears the object everywhere with the pin out.
+      </label>
+      <p class="text-error" data-bind="text: readyText, visible: readyText"></p>
+      <p class="text-error" data-bind="visible: !tapTestEnabled()">
+        The tap test is off in the settings, so nothing proves a touch reaches the probe board today.
+      </p>
+      <div class="lhp-actions">
+        <button class="btn btn-primary" data-bind="click: start, enable: canStart, visible: canProbe"><i class="fas fa-play"></i> Measure the points</button>
+        <span class="muted lhp-small">Each job starts with a tap test.</span>
+      </div>
+      <!-- /ko -->
+    </div>
+
+    <div class="lhp-card">
+      <h5>Points</h5>
+      <p class="muted lhp-small">
+        One laser position per line, "X Y" in printer coordinates. Add <code>ref</code> to the bed or reference point, and
+        <code>datum</code> to the point LightBurn's Z offsets count from (the first point if none).
+      </p>
+      <textarea rows="6" class="input-block-level laserheightprobe-points" data-bind="value: pointsText, enable: canProbe"></textarea>
+      <div class="lhp-actions">
+        <button class="btn btn-small" data-bind="click: savePoints, enable: canProbe">Save points</button>
+        <button class="btn btn-small" data-bind="click: addPosition, enable: canProbe() && !running()"
+                title="Reads M114 and adds where the pin is now: head position plus the probe XY offset">Add current position</button>
+      </div>
+      <form class="form-inline laserheightprobe-grid lhp-fields" data-bind="submit: makeGrid">
+        Grid from X <input type="number" step="any" class="input-mini" data-bind="value: gridX0">
+        Y <input type="number" step="any" class="input-mini" data-bind="value: gridY0">
+        to X <input type="number" step="any" class="input-mini" data-bind="value: gridX1">
+        Y <input type="number" step="any" class="input-mini" data-bind="value: gridY1">,
+        <input type="number" step="1" min="1" max="20" class="input-mini" data-bind="value: gridNx"> by
+        <input type="number" step="1" min="1" max="20" class="input-mini" data-bind="value: gridNy"> points
+        <button class="btn btn-small" type="submit" data-bind="enable: canProbe">Replace the list</button>
+      </form>
+    </div>
+
+    <div class="lhp-card">
+      <h5>Results</h5>
+      <!-- ko ifnot: rows().length -->
+      <p class="muted">No job has finished yet.</p>
+      <!-- /ko -->
+      <!-- ko if: rows().length -->
+      <p class="muted lhp-small" data-bind="text: resultCaption"></p>
+      <div class="lhp-table-wrap">
+        <table class="table table-condensed laserheightprobe-results">
+          <thead>
+            <tr><th>#</th><th>X</th><th>Y</th><th>Trigger Z</th><th>Height above ref</th>
+                <th>Focus Z</th><th>LightBurn Z offset</th><th>Datum</th></tr>
+          </thead>
+          <tbody data-bind="foreach: rows">
+            <!-- ko if: failed -->
+            <tr><td data-bind="text: index + 1"></td><td colspan="7" class="text-error">failed</td></tr>
+            <!-- /ko -->
+            <!-- ko ifnot: failed -->
+            <tr data-bind="css: {info: is_datum}">
+              <td data-bind="text: (index + 1) + (is_reference ? ' ref' : '')"></td>
+              <td data-bind="text: x.toFixed(2)"></td>
+              <td data-bind="text: y.toFixed(2)"></td>
+              <td><span data-bind="text: z.toFixed(3)"></span>
+                  <span class="muted" data-bind="text: 'spread ' + spread.toFixed(3) + ', n=' + n + (taken !== n ? ' of ' + taken : '')"></span></td>
+              <td data-bind="text: $parent.num(height, true)"></td>
+              <td data-bind="text: $parent.num(focus, false)"></td>
+              <td><strong data-bind="text: $parent.num(lightburn, true)"></strong></td>
+              <td><input type="radio" name="laserheightprobe_datum" data-bind="checked: $parent.datumText, value: String(index)"></td>
+            </tr>
+            <!-- /ko -->
+          </tbody>
+        </table>
+      </div>
+      <div class="alert laserheightprobe-sign lhp-small">
+        <strong>Check the sign once.</strong> The LightBurn Z offset is focus at the point minus focus at the datum, so positive
+        means that point's focus is higher. Give a test layer +1 mm in LightBurn, run it with the beam off and watch Z: if the
+        head goes down, tick "Flip the sign" in the plugin settings.
+      </div>
+      <div class="lhp-actions">
+        <button class="btn btn-small" data-bind="click: copyText"><i class="far fa-copy"></i> Copy as text</button>
+        <span class="muted" data-bind="text: copyMessage"></span>
+      </div>
+      <!-- /ko -->
+      <textarea readonly rows="6" id="laserheightprobe_text" class="input-block-level laserheightprobe-text" data-bind="value: tableText, visible: rows().length"></textarea>
+    </div>
+
+    <div class="lhp-card">
+      <h5>Heights</h5>
+      <p class="muted lhp-small">
+        From your machine, no defaults. Safe Z: where the pin, deployed, clears the whole object. Z floor: just above the bed or
+        fixture. No probing step goes below the floor.
+      </p>
+      <div class="lhp-fields">
+        <label>Safe Z <input type="number" step="any" class="input-small" data-bind="value: safeZInput, enable: canProbe() && !running()"></label>
+        <button class="btn btn-small" data-bind="click: function () { captureHeight('safe_z'); }, enable: canProbe() && !running()">Use current Z</button>
+        <button class="btn btn-small" data-bind="click: function () { saveHeight('safe_z', safeZInput()); }, enable: canProbe() && !running()">Save</button>
+      </div>
+      <div class="lhp-fields">
+        <label>Z floor <input type="number" step="any" class="input-small" data-bind="value: zFloorInput, enable: canProbe() && !running()"></label>
+        <button class="btn btn-small" data-bind="click: function () { captureHeight('z_floor'); }, enable: canProbe() && !running()">Use current Z</button>
+        <button class="btn btn-small" data-bind="click: function () { saveHeight('z_floor', zFloorInput()); }, enable: canProbe() && !running()">Save</button>
+      </div>
+      <p class="text-error" data-bind="text: heightsText, visible: heightsText"></p>
+    </div>
+
+    <details class="lhp-card lhp-details">
+      <summary><i class="fas fa-tools"></i> Probe hardware</summary>
+      <p class="lhp-small">
+        Board at <code data-bind="text: espUrl"></code>.
+        Latched: <strong data-bind="text: yesNo(probeStatus().latched)"></strong>,
+        output: <strong data-bind="text: probeStatus().raw === true ? 'HIGH' : (probeStatus().raw === false ? 'LOW' : '?')"></strong>,
+        triggers since boot: <strong data-bind="text: probeStatus().trigger_count === undefined || probeStatus().trigger_count === null ? '?' : probeStatus().trigger_count"></strong>
+        <span class="text-error" data-bind="text: probeStatus().error"></span>
+      </p>
+      <div class="btn-group laserheightprobe-buttons">
+        <button class="btn btn-small" data-bind="click: readProbe">Read</button>
+        <button class="btn btn-small" data-bind="click: function () { probeButton('deploy'); }, enable: canProbe() && !running()">Deploy</button>
+        <button class="btn btn-small" data-bind="click: function () { probeButton('stow'); }, enable: canProbe() && !running()">Stow</button>
+        <button class="btn btn-small" data-bind="click: function () { probeButton('reset'); }, enable: canProbe() && !running()">Reset alarm</button>
+        <button class="btn btn-small" data-bind="click: checkWiring, enable: canProbe() && !running() && !checking()">Test the wiring</button>
+      </div>
+      <p class="muted lhp-small">
+        The wiring test puts the probe in touch mode, pin up, and expects HIGH. Some BLTouch clones have no touch mode, so a
+        failure there is not proof of a fault: deploy the pin, push it up by hand and press Read.
+        <strong data-bind="text: checkResult"></strong>
+      </p>
+      <p class="muted lhp-small">
+        <button class="btn btn-mini" data-bind="click: setOdMode, enable: canProbe() && !running()">Set the probe to open-drain</button>
+        One-off, stored in the probe. Only if a meter shows 5 V on the white wire (it goes straight to GPIO3).
+      </p>
+    </details>
+  </div>
+
+  <!-- ===================================================================== CALIBRATE -->
+  <div class="lhp-pane" data-bind="visible: uiShow('setup')">
+
+    <div class="lhp-card">
+      <h5><i class="fas fa-microchip"></i> Laser module</h5>
+      <p>
+        <!-- ko if: pickModule -->
+        <select data-bind="options: modules, optionsText: moduleLabel, optionsValue: 'name', value: selectedModule, enable: canProbe() && !running()" title="M1006 cannot name this laser: pick it"></select>
+        <!-- /ko -->
+        <!-- ko ifnot: pickModule -->
+        <strong data-bind="text: selectedModule"></strong> <span class="muted">(from M1006)</span>
+        <!-- /ko -->
+        <span class="muted" data-bind="text: selectedOffsetText"></span>
+      </p>
+      <p class="muted lhp-small" data-bind="text: detectedText"></p>
+      <div class="lhp-fields">
+        Probe XY offset (pin minus beam): dx
+        <input type="number" step="any" class="input-mini" data-bind="value: dxInput, enable: canProbe() && !running()">
+        dy <input type="number" step="any" class="input-mini" data-bind="value: dyInput, enable: canProbe() && !running()">
+        <button class="btn btn-small" data-bind="click: saveXy, enable: canProbe() && !running()">Save</button>
+        <button class="btn btn-small" data-bind="click: clearXy, enable: canProbe() && !running()">Clear</button>
+      </div>
+      <p class="text-warning lhp-small" data-bind="visible: xyMissing">
+        This module's beam position relative to the pin is not measured, so the pin touches where the 10W's beam would be (0, 0).
+      </p>
+    </div>
+
+    <details class="lhp-card lhp-details">
+      <summary><i class="fas fa-bullseye"></i> Focus offset <span class="muted" data-bind="text: selectedOffsetText"></span></summary>
+      <p class="muted lhp-small">
+        Focus Z = trigger Z + the module's focus offset. The LightBurn column does not need it: the offset cancels out of the differences.
+      </p>
+      <ol class="laserheightprobe-steps">
+        <li>
+          With the probe head in the bay, probe a flat reference spot.
+          X <input type="number" step="any" class="input-mini" data-bind="value: calibX">
+          Y <input type="number" step="any" class="input-mini" data-bind="value: calibY">
+          <button class="btn btn-small" data-bind="click: calibrateProbe, enable: canStart">Probe the reference spot</button>
+          <div class="muted lhp-small">Tick the setup box on the Probe tab first; this also starts with a tap test. Or Probe here over the spot in the Control tab, then
+            <button class="btn btn-mini" data-bind="click: useHereReference, enable: canProbe() && hereRows().length">Use the last Probe here result</button>
+          </div>
+          <div class="muted lhp-small" data-bind="text: calibrationText"></div>
+        </li>
+        <li>
+          Swap the laser in (no power cycle: it stayed plugged in). Jog it over the same spot to best focus with the beam off:
+          <div class="lhp-fields">
+            Laser focus Z <input type="number" step="any" class="input-small" data-bind="value: laserFocusZ">
+            <button class="btn btn-small" data-bind="click: useCurrentZ, enable: canProbe() && !running()">Use current Z</button>
+            <button class="btn btn-small btn-primary" data-bind="click: saveFromFocus, enable: canProbe() && hasReference()">Save offset</button>
+          </div>
+          <div class="lhp-fields">
+            Or the card method, a card under the hood just drags at Z <input type="number" step="any" class="input-small" data-bind="value: touchZ">
+            <button class="btn btn-small" data-bind="click: useCurrentTouchZ, enable: canProbe() && !running()">Use current Z</button>
+            card <input type="number" step="any" min="0" max="2" class="input-mini" data-bind="value: cardThickness" placeholder="mm">
+            + focal distance <input type="number" step="any" class="input-mini" data-bind="value: focalDistance">
+            <button class="btn btn-small" data-bind="click: saveFromTouch, enable: canProbe() && hasReference()">Save offset</button>
+          </div>
+          <div class="muted lhp-small">The card lifts the hood by its own thickness (0 if the hood touches the bare surface). Focal distance: 10 for the 10W.</div>
+          <div class="lhp-small" data-bind="text: touchPreview, css: {'text-error': touchPreviewWarning, muted: !touchPreviewWarning()}"></div>
+        </li>
+        <li>
+          Swap the probe head back and Probe here over the same spot again. A Z lost in the swap shows here:
+          <div class="lhp-small" data-bind="text: retouchText, css: {'text-error': retouchBad}"></div>
+          <div class="muted lhp-small" data-bind="visible: swapText, text: swapText"></div>
+        </li>
+        <li>
+          Or type it: <input type="number" step="any" class="input-small" data-bind="value: typedOffset">
+          <button class="btn btn-small" data-bind="click: saveTyped, enable: canProbe">Save offset</button>
+          <button class="btn btn-small" data-bind="click: clearOffset, enable: canProbe">Clear</button>
+        </li>
+      </ol>
+      <p data-bind="text: offsetMessage, css: {'text-error': offsetWarning}"></p>
+      <p class="muted lhp-small">Confirm the offset on material with a focus ladder (README, "Calibration checks"). It burns, so it is a file you check and run yourself, never a button here.</p>
+    </details>
+
+    <!-- ko ifnot: rotaryOn -->
+    <details class="lhp-card lhp-details laserheightprobe-calib" data-bind="visible: uiHasCamera">
+      <summary><i class="fas fa-camera"></i> Close-up camera and red dot <span class="muted" data-bind="text: closeupCalibText"></span></summary>
+      <p class="muted lhp-small">Only needed once, or after the camera or the module is knocked. Each step uses the newest photos; nothing is used until the last button.</p>
+      <ol>
+        <li><a href="plugin/laserheightprobe/closeup_board.png" target="_blank">Print the board</a> on A4 at 100 % (no scaling) and tape it flat in the middle of the bare bed.</li>
+        <li><label class="checkbox"><input type="checkbox" data-bind="checked: closeupCalibClear">
+          The bed holds nothing but the board (or the crosses' paper): the head goes down to Z40.</label>
+          <button class="btn btn-small" data-bind="click: function () { closeupCalibCapture('board'); }, enable: canProbe() && printerReady() && !running() && closeupCalibClear()">Photograph the board (about 25 min)</button>
+          <button class="btn btn-small" data-bind="click: closeupCalibSolve, enable: canProbe() && !running() && closeupCalibInfo().board">Solve the lens</button></li>
+        <li>Take the board off. Burn the four alignment crosses (16 mm, at LightBurn (60, 100), (200, 100), (60, 250), (200, 250)) on
+          fresh paper, and photograph them before anything moves:
+          <button class="btn btn-small" data-bind="click: function () { closeupCalibCapture('cross'); }, enable: canProbe() && printerReady() && !running() && closeupCalibClear()">Photograph the crosses (about 7 min)</button>
+          <button class="btn btn-small" data-bind="click: closeupCalibTie, enable: canProbe() && !running() && closeupCalibInfo().cross && closeupCalibInfo().candidate">Tie to the beam</button></li>
+        <li>For the red dot: draw a box on flat paper on the Camera tab with nothing tall to its right (the dot's light comes in from
+          the right), tick the box above, then
+          <button class="btn btn-small" data-bind="click: dotCalibrate, enable: canProbe() && printerReady() && !running() && closeupBox() && closeupCalibClear() && !dotBusy()">Calibrate the red dot there (about 3 min)</button></li>
+        <li><button class="btn btn-small btn-primary" data-bind="click: closeupCalibAccept, enable: canProbe() && !running() && closeupCalibReady()">Use this calibration</button></li>
+      </ol>
+      <p data-bind="text: closeupCalibMessage, visible: closeupCalibMessage"></p>
+    </details>
+    <!-- /ko -->
+  </div>
+
+  <!-- the log drawer -->
+  <div class="lhp-log-drawer">
+    <a href="#" class="lhp-log-toggle" data-bind="click: function () { uiLogOpen(!uiLogOpen()); }">
+      <i class="fas" data-bind="css: uiLogOpen() ? 'fa-chevron-down' : 'fa-chevron-right'"></i> Activity log
+    </a>
+    <pre id="laserheightprobe_log" class="laserheightprobe-log" data-bind="text: log, visible: uiLogOpen"></pre>
+  </div>
+</div>

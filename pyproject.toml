@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "OctoPrint-LaserHeightProbe"
+version = "0.1.0"
+description = "OctoBurn: OctoPrint as the control room for the Snapmaker 2.0 lasers. Focus by probe and red dot, height maps, rotary measuring, a LightBurn close-up camera and safety interlocks."
+readme = "README.md"
+requires-python = ">=3.7,<4"
+license = { text = "MIT" }
+authors = [{ name = "Chris Nesbitt-Smith", email = "chris@cns.me.uk" }]
+keywords = ["octoprint", "plugin", "laser", "focus", "probe", "bltouch", "snapmaker", "lightburn"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: OctoPrint",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://octoburn.cns.me"
+Source = "https://github.com/chrisns/octoburn"
+
+[project.optional-dependencies]
+# The close-up camera (stitched 10W head camera photos for LightBurn). The test machine's OctoPrint Python
+# already has both; the plugin installs with --no-deps and loads without them.
+closeup = ["numpy>=1.24", "opencv-python-headless>=4.8"]
+
+[project.entry-points."octoprint.plugin"]
+laserheightprobe = "octoprint_laserheightprobe"
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.packages.find]
+include = ["octoprint_laserheightprobe", "octoprint_laserheightprobe.*"]
+
+[tool.setuptools.package-data]
+octoprint_laserheightprobe = ["templates/*", "static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

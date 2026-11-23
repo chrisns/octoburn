@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.opkey
+installed/
+notes/
+_site/
+.toc.tmp
+hardware/firmware/secrets.yaml
+hardware/firmware/*.ttf
+hardware/firmware/.esphome/
