@@ -33,6 +33,7 @@ from octoprint.access import ADMIN_GROUP, USER_GROUP
 from octoprint.access.permissions import Permissions
 from octoprint.events import Events
 
+from . import linkguard
 from . import calibration, gcode, grbl_bridge, headcam, heightmap, meshload, results, settings as config_module
 from . import bedcam, camera_model, closeup_plan, lightburn_camera
 from . import air as air_mod, purifier as purifier_mod, redot
@@ -454,6 +455,7 @@ class LaserHeightProbePlugin(
         self._air_start()
         self._frame_watching = True
         threading.Thread(target=self._frame_watch, name="laserheightprobe-frame", daemon=True).start()
+        self._link_start()
         self._logger.info("laser height probe ready")
 
     def on_shutdown(self):
@@ -505,6 +507,9 @@ class LaserHeightProbePlugin(
         return None
 
     def gcode_sent(self, comm_instance, phase, cmd, cmd_type, gcode_, *args, **kwargs):
+        link = getattr(self, "_link", None)
+        if link is not None and cmd:
+            link.sent(cmd)
         tags = kwargs.get("tags") or set()
         if AIR_TAG in tags:
             return                                # a purifier line: not the bridge's, not a burn
@@ -998,6 +1003,50 @@ class LaserHeightProbePlugin(
         self._settings.set_boolean([key], bool(data.get("value")))
         self._settings.save()
         return dict(ok=True, key=key, value=bool(data.get("value")))
+
+    # -- the serial link guard (linkguard.py) ----------------------------------------------
+    def _link_start(self):
+        try:
+            cfg = config_module.link_config(self._config())
+        except SettingsError as exception:
+            self._log_line("Link guard: bad settings (%s): using the defaults, no power cut." % exception)
+            cfg = dict(ok_s=2.0, power_s=3.0, switch="", ha_url="", ha_token="")
+        self._link_cfg = cfg
+        self._link = linkguard.LinkGuard(fake_ack=self._printer.fake_ack, stop=self._link_stop,
+                                         power_off=self._link_power_off, log=self._log_line,
+                                         ok_s=cfg["ok_s"], power_s=cfg["power_s"])
+        self._link_running = True
+        threading.Thread(target=self._link_loop, name="laserheightprobe-link", daemon=True).start()
+
+    def _link_loop(self):
+        while getattr(self, "_link_running", False):
+            time.sleep(0.2)
+            try:
+                self._link.step()
+            except Exception:                                # noqa: BLE001 - never kill the guard
+                self._logger.exception("link guard")
+
+    def _link_stop(self):
+        """A burn whose oks have stopped: unstick OctoPrint's queue, drop the bridge's, quickstop, beam off."""
+        try:
+            self._printer.fake_ack()
+        except Exception:                                    # noqa: BLE001
+            self._logger.exception("link guard: fake_ack")
+        if self._grbl is not None:
+            if self._grbl.context is not None:
+                self._grbl.context.laser_until = None
+            self._grbl.reset()
+        self._printer.commands(["M5"])
+
+    def _link_power_off(self):
+        cfg = getattr(self, "_link_cfg", None) or {}
+        if not cfg.get("switch") or not cfg.get("ha_url") or not cfg.get("ha_token"):
+            self._log_line("Link guard: no emergency_power_switch (with the Home Assistant URL and token) "
+                           "set: cannot cut the power. Switch the printer off by hand.")
+            return
+        from .air import HomeAssistant
+        HomeAssistant(cfg["ha_url"], cfg["ha_token"]).switch(cfg["switch"], False)
+        self._log_line("Link guard: the printer's power (%s) is switched off." % cfg["switch"])
 
     def _frame_watch(self):
         """With focus_after_frame on: after each new LightBurn Frame in flat mode (laser not armed,
@@ -3165,6 +3214,9 @@ class LaserHeightProbePlugin(
         if fixed != line:
             self._logger.info("Repaired an ok glued into the laser report: %r" % line)
             line = fixed
+        link = getattr(self, "_link", None)
+        if link is not None:
+            link.received(line)
         if self._bridge is None:
             return line
         return self._bridge.on_gcode_received(comm_instance, line, *args, **kwargs)
