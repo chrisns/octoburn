@@ -23,8 +23,12 @@ Pure logic with an injected clock and actions, so it can be replayed against rea
 """
 from __future__ import absolute_import, division
 
+import collections
 import re
 import time
+
+PLANNER_MOVES = 32     # at most this many moves sit in the firmware's queue (Marlin's block buffer is 16;
+                       # doubled for the serial buffer), so only the last 32 sent can still hold an ok back
 
 _POWER_RE = re.compile(r"\bS(\d+(?:\.\d+)?)")
 _WORD_RE = re.compile(r"([XYZBF])\s*(-?\d+(?:\.\d+)?)")
@@ -58,6 +62,7 @@ class LinkGuard(object):
         self.feed = None             # modal F (mm/min, or deg/min for a B-only move)
         self.relative = False
         self.busy_until = None       # when the motion queued so far should end
+        self.recent = collections.deque(maxlen=PLANNER_MOVES)   # durations of the last moves sent
 
     def move_seconds(self, cmd):
         """Estimated duration of a G0/G1 (0 for anything else or when it cannot be told)."""
@@ -98,7 +103,10 @@ class LinkGuard(object):
         now = self.clock()
         seconds = self.move_seconds(cmd)
         if seconds > 0:
-            self.busy_until = max(now, self.busy_until or now) + seconds
+            self.recent.append(seconds)
+            # the queue cannot hold more than the last PLANNER_MOVES moves: a long run of short
+            # moves must not push the deadline out (23:54 on 2026-11-23: a real lost ok waited 6 s)
+            self.busy_until = min(max(now, self.busy_until or now) + seconds, now + sum(self.recent))
         if self.waiting is None:
             self.waiting = (now, cmd)
 

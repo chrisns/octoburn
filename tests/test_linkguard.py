@@ -152,3 +152,22 @@ def test_the_motion_estimate_uses_length_over_feed():
     assert abs(g.move_seconds("G0 B-148 F1500") - 5.92) < 0.01
     assert abs(g.move_seconds("G1 X30 S10") - 60 * (30 ** 2) ** 0.5 / 1500) < 1e-9   # F is modal
     assert g.move_seconds("M400") == 0.0
+
+
+def test_a_lost_ok_behind_a_long_travel_waits_for_the_travel_and_ok_s_only():
+    # 23:54 on 2026-11-23: a real lost ok, 3 s after a 6.2 s travel (155 deg at the B ceiling) went
+    # into the queue with 15 short burns behind it. The ok could not come before the travel ended;
+    # the guard faked it ok_s after the estimated end of the queue, so the beam dwelt about 2 s
+    g, acts = replay("stall4_short_moves.log", hang_s=10.0)
+    assert acts[:1] == ["fake_ack"], acts
+    assert g.events[0][0] - g.busy_until <= g.ok_s + 0.15, g.events[0][0] - g.busy_until
+    assert g.events[0][0] - g.last_send_t <= 7.0
+
+
+def test_the_queue_estimate_counts_only_the_moves_the_firmware_can_hold():
+    clock = Clock()
+    g = linkguard.LinkGuard(fake_ack=lambda: None, stop=lambda: None, clock=clock)
+    g.sent("G0 X0 Y0 Z0 B0 F1500")
+    for k in range(200):                      # 200 x 0.4 s of moves sent in a burst
+        g.sent("G1 X%.1f S10 F1500" % (10.0 * (k + 1)))
+    assert g.busy_until - clock.t <= linkguard.PLANNER_MOVES * 0.4 + 1e-6
