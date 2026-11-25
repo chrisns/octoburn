@@ -21,6 +21,7 @@ covered by this project's MIT licence; see [NOTICE](NOTICE). The plugin's intern
 Website: **https://octoburn.cns.me**. Films on YouTube: [the 30 s trailer](https://youtu.be/r6Z2eJupoSw) and [how it works](https://youtu.be/d7_Ms80WSM8).
 
 <p align="center"><img src="docs/img/rotary-burn.gif" alt="The laser module over a steel bottle in the rotary chuck; the bottle slides back and forth under a small white beam spot as each line burns" width="640"></p>
+<p align="center"><strong>Don't you wish your laser did Z like mine? Don't you?</strong></p>
 <p align="center"><em>A rotary job: LightBurn sends a dithered photo through OctoBurn to the 2W infrared, onto a
 79 mm steel bottle. Each line runs along the bottle and the chuck turns 0.22° between lines. The
 white spot is the beam, which the camera can see and you can't. Side camera, double speed.</em></p>
