@@ -405,3 +405,32 @@ def test_microscopic_burn_moves_are_merged_into_the_next_not_sent():
     assert len(burns) == 1                                  # only the 2 mm move goes out
     y = float(re.search(r" Y(-?[\d.]+)", burns[0]).group(1))
     assert y == pytest.approx(50.0 + 12.0, abs=0.01)        # and it ends where LightBurn meant
+
+
+def test_raster_dots_shorter_than_the_skip_length_are_kept():
+    """A dithered photo is lines of 0.05 to 0.1 mm dots and gaps along X. Each dot carries straight on
+    from the gap before it, so none is skipped (skipping them wiped out the light tones)."""
+    s = rg.Surface(result(), focus_offset=0.0)
+    lines = ["G90", "M3", "G0X10A0", "G1X10.5S0F1000"]
+    x = 10.5
+    for k in range(20):                                     # dot 0.05, gap 0.05, ...
+        x += 0.05
+        lines.append("G1X%.3fS255" % x)
+        x += 0.05
+        lines.append("G1X%.3fS0" % x)
+    lines += ["G1X12S0", "M5"]
+    out, _ = rg.translate(lines, s, y_origin=50.0)
+    burns = [l for l in out if l.startswith("G1") and re.search(r" S[1-9]", l)]
+    assert len(burns) == 20
+    # and the scan back the other way (bidirectional raster) keeps its dots too
+    lines = ["G90", "M3", "G0X12A0.1", "G1X11.5S0F1000", "G1X11.45S255", "G1X11.4S0", "G1X11.35S255",
+             "G1X11S0", "M5"]
+    out, _ = rg.translate(lines, s, y_origin=50.0)
+    assert len([l for l in out if l.startswith("G1") and re.search(r" S[1-9]", l)]) == 2
+
+
+def test_a_short_burn_straight_after_a_travel_is_still_skipped():
+    """Only a G1 before it counts as carrying straight on: after a G0 a speck is still a speck."""
+    s = rg.Surface(result(), focus_offset=0.0)
+    out, _ = rg.translate(["G90", "M3", "G0X10A0", "G1X10.05S200F600", "G0X20A0", "M5"], s, y_origin=50.0)
+    assert not [l for l in out if l.startswith("G1") and re.search(r" S[1-9]", l)]
