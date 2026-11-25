@@ -62,7 +62,9 @@ GUARD = "M112 ; RAW LIGHTBURN ROTARY FILE"
 # to go to -X on the top surface for a right-handed (unmirrored) result: B = -A.
 Y_SIGN = 1
 B_SIGN = -1
-MIN_BURN_SEG = 0.1               # mm of surface: burn moves shorter than this are skipped (merged)
+MIN_BURN_SEG = 0.1               # mm of surface: burn moves shorter than this are skipped (merged)...
+STRAIGHT_ON = 0.995              # ...unless they carry straight on from the G1 before (cos of the turn):
+                                 # a raster dot, not an offset fill's turning speck
 MAX_B_FEED = 2400.0              # deg/min (Luban's MAX_B_SPEED; the firmware's cap is 45 deg/s)
 TRAVEL_FEED = 3000.0
 # Where the head goes before it crosses when nobody knows where it is (a file run): above the
@@ -330,6 +332,7 @@ class RotaryEmitter(object):
         self.burned, self.fastest_b = 0.0, 0.0
         self.min_burn_seg = MIN_BURN_SEG
         self.skipped = 0                    # microscopic burn moves skipped
+        self.last_dir = None                # unit (along, round) of the last G1 sent; None after a G0
         self.slowed = 0                     # burn moves slowed (power scaled with them) to the B limit
         # Split moves longer than this (mm of surface) so a stop waits behind short blocks and
         # Z follows the runout between the ends (None: no splitting, as for a file).
@@ -412,18 +415,29 @@ class RotaryEmitter(object):
                 ft = self.max_b_feed * fw / db
             out.append("G0 X%.3f Y%.3f Z%.3f B%.3f F%d" % (mx + self.bx, y + self.by, mz, b - self.b_shift,
                                                           max(1, int(ft))))
+            self.last_dir = None
         elif fw < 1e-9:
             if not mv["fire"]:
                 out.append("G1 S0")
         else:
             minutes = mv["minutes"]
             f = self.travel_feed if not minutes else fw / minutes
-            surf_len = math.hypot(dlin, db / self.deg_per_mm) if self.deg_per_mm else dlin
-            if mv["fire"] and surf_len < self.min_burn_seg:
+            rnd = db / self.deg_per_mm if self.deg_per_mm else 0.0
+            surf_len = math.hypot(dlin, rnd)
+            sgn = 1.0 if (y - p["y"]) >= 0 else -1.0
+            here = ((sgn * dlin / surf_len, (b - p["b"]) / self.deg_per_mm / surf_len)
+                    if surf_len > 1e-12 and self.deg_per_mm else None)
+            straight = (self.last_dir is not None and here is not None
+                        and here[0] * self.last_dir[0] + here[1] * self.last_dir[1] >= STRAIGHT_ON)
+            if mv["fire"] and surf_len < self.min_burn_seg and not straight:
                 # a microscopic burn move (the inner specks of an offset fill): skip it and draw the next
                 # move from the last point sent. Tiny reversing loops hung the firmware (2026-11-23).
+                # A raster dot carries straight on from the G1 before it (the gap or the last dot), so
+                # it is kept: skipping those wiped out every light tone of a dithered photo.
                 self.skipped += 1
                 return out
+            if here is not None:
+                self.last_dir = here
             if mv["fire"]:
                 if not minutes:
                     raise TranslateError("a burn with no speed")
