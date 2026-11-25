@@ -761,14 +761,18 @@ first time.
 The link guard watches every line sent and received:
 
 1. A burn line (a G1 with S above 0) that has waited `link_ok_s` for its `ok` while the printer
-   still reports has lost its `ok`. The guard fakes it and the job carries on.
+   still reports has lost its `ok`. The guard fakes it and the job carries on. The firmware holds
+   `ok`s back while slow moves are queued (a 148° turn at the B ceiling takes 6 s), so the wait
+   starts when the queued motion should have finished. The guard estimates that from the last 32
+   moves sent, which is as many as the firmware holds.
 2. A second loss before any real `ok`, or a printer that has gone silent, stops the burn: the
    queue is dropped, then M410 (quick stop) and M5. The LightBurn bridge raises an alarm, so
    LightBurn's job ends. LightBurn's Stop or Disarm clears it.
 3. If no real `ok` follows within `link_power_s`, the guard turns off `emergency_power_switch`,
    when one is set.
 
-The tests replay the three real stalls from the serial log (`tests/data/serial/`).
+The tests replay the real stalls from the serial log (`tests/data/serial/`), and the slow queues
+that once made the guard stop a healthy burn.
 
 ### LightBurn rotary jobs
 
@@ -814,7 +818,9 @@ What the translator (`rotary_gcode.translate`) does, from real LightBurn 2.1.04 
   travels are slowed to the ceiling too. On 78 mm, 1500 deg/min is about 1020 mm/min of surface.
   LightBurn's feed on near-pure rotations, such as offset-fill contours, often runs over it.
 - Burn moves shorter than 0.1 mm of surface are merged into the next one. LightBurn writes tiny
-  reversing loops on some fills, and a run of them hung the firmware.
+  reversing loops on some fills, and a run of them hung the firmware. A short burn that carries
+  straight on from the move before it is kept: that is a raster dot, and a dithered photo is made
+  of them.
 
 ## Close-up camera (10W head camera, for LightBurn)
 
@@ -1031,7 +1037,7 @@ The buttons are refused while a job runs.
 | Laser modules | `10W = , 0, 0` and `2W IR =` | `name = focus offset, dx, dy`, blank until measured |
 | Flip LightBurn sign | off | See above |
 | `rotary_max_b_feed` | 1500 deg/min | Rotary B ceiling for burns and travels (300-2400). See [LightBurn rotary jobs](#lightburn-rotary-jobs) |
-| `link_ok_s` | 2.0 s | Link guard: how long a burn line waits for its `ok` before the guard acts |
+| `link_ok_s` | 2.0 s | Link guard: how long a burn line waits for its `ok`, after the queued motion should have ended, before the guard acts |
 | `link_power_s` | 3.0 s | Link guard: after a stop, how long to wait for a real `ok` before cutting the power |
 | `emergency_power_switch` | empty | Link guard: a Home Assistant switch on the printer's mains, like `switch.laser_printer`. Uses the purifier's Home Assistant URL and token. Empty: no power cut |
 
